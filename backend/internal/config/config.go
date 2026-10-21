@@ -12,6 +12,11 @@ type Config struct {
 	DBUser         string
 	DBPassword     string
 	DBName         string
+	// DBSSLMode is passed straight through to the Postgres DSN. Local dev
+	// Postgres has no TLS listener at all, hence "disable" by default;
+	// hosted Postgres (e.g. Neon) refuses non-TLS connections and needs
+	// this set to "require" via env.
+	DBSSLMode      string
 	RedisHost      string
 	RedisPort      string
 	// RedisDB selects Redis's logical DB index (0-15 by default) — lets two
@@ -38,6 +43,7 @@ func Load() *Config {
 		DBUser:         getEnv("POSTGRES_USER", "hr_admin"),
 		DBPassword:     getEnv("POSTGRES_PASSWORD", ""),
 		DBName:         getEnv("POSTGRES_DB", "hr_system"),
+		DBSSLMode:      getEnv("DB_SSLMODE", "disable"),
 		RedisHost:      getEnv("REDIS_HOST", "redis"),
 		RedisPort:      getEnv("REDIS_PORT", "6379"),
 		RedisDB:        getEnvInt("REDIS_DB", 0),

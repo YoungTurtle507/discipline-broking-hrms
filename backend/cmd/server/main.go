@@ -37,7 +37,11 @@ func main() {
 	}
 	defer db.Close()
 
-	rdb := redisclient.Connect(cfg)
+	rdb, err := redisclient.Connect(cfg)
+	if err != nil {
+		slog.Error("failed to connect to redis", "error", err)
+		os.Exit(1)
+	}
 	defer rdb.Close()
 
 	authRepo := auth.NewRepository(db)

@@ -1,0 +1,53 @@
+# Environment
+.env
+
+# Node / Next.js
+node_modules/
+.next/
+frontend/out/
+
+# Go
+backend/bin/
+backend/tmp/
+
+# Uploaded files (leave documents, etc.) — real employee data, never committed
+backend/storage/
+
+# Python
+face-service/__pycache__/
+face-service/**/__pycache__/
+face-service/.venv/
+face-service/venv/
+*.pyc
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude Code local state
+.claude/
+
+# Machine-specific TLS trust cert (see README: "Building behind a TLS-inspecting network")
+**/corporate-ca.crt.local
+
+# Local dev HTTPS cert (self-signed, machine-specific — see next.config.ts)
+frontend/.certs/
+
+# Logs
+*.log
+
+# Compiled Windows binaries (this project now builds on Linux)
+*.exe
+*.exe~
+
+# Build artifacts from installing the vendored insightface copy
+face-service/vendor/**/build/
+
+# Local DB snapshots taken before destructive fixes
+backups/
+
+# Real employee data exports — never committed
+Attendance - April to Septmber.xlsx
+
+# Compiled build artifact, not source
+backend/dataimport

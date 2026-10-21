@@ -1,0 +1,5 @@
+-- Postgres has no ALTER TYPE ... DROP VALUE. Removing an enum value would mean
+-- recreating the type and every column/index that uses it, which is only
+-- worth doing if something actually needs to roll back — left as a no-op
+-- until then. Any LUNCH/PERSONAL rows written after the up migration would
+-- need to be reassigned or removed by hand before attempting that rebuild.

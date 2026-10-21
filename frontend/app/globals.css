@@ -1,0 +1,111 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: var(--font-plex-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, "SFMono-Regular", monospace;
+  /* Repurposed, not removed: every existing font-serif usage (headings, big
+     stat numerals) becomes tabular mono instead — a terminal reads its own
+     numbers and headers in the same face it reads data in. */
+  --font-serif: var(--font-plex-mono), ui-monospace, "SFMono-Regular", monospace;
+
+  --text-sm--line-height: 1.45;
+  --text-base--line-height: 1.5;
+
+  /* Ops Terminal — dense, near-monochrome utility surface. Hairlines and one
+     functional accent do the work that shadows and warm tone used to. */
+  --color-slate-50: #f7f7f6;
+  --color-slate-100: #eeeeec;
+  --color-slate-200: #dcdcd8;
+  --color-slate-300: #c5c5c0;
+  --color-slate-400: #9a9a96;
+  --color-slate-500: #6e6f73;
+  --color-slate-600: #57585c;
+  --color-slate-700: #3d3e41;
+  --color-slate-800: #26272a;
+  --color-slate-900: #16171a;
+
+  --color-white: #ffffff;
+
+  /* Accent — the one functional hue. Doubles as nav-active, primary buttons
+     and "info/on leave", exactly as the terminal direction specifies. */
+  --color-brand-blue: #2d5d8b;
+  --color-brand-blue-dark: #234a6e;
+  --color-navy: #2d5d8b;
+  --color-navy-light: #3a6f9e;
+  --color-light-blue: #e2ebf3;
+
+  --color-success: #2f7d4f;
+  --color-success-bg: #e3ede6;
+  /* Darkened from the sample's own #9a6a12 — that failed 4.5:1 for small
+     table text (4.33:1); this clears it on both bg and white (5.3:1+). */
+  --color-warning: #8a5c0e;
+  --color-warning-bg: #f1e8d9;
+  --color-error: #a53b34;
+  --color-error-bg: #f2e1df;
+
+  /* No separate "leave" hue — the direction reuses the one accent for
+     info/on-leave status, deliberately, rather than adding a second color. */
+  --color-accent-purple: #2d5d8b;
+  --color-accent-purple-bg: #e2ebf3;
+
+  --color-amber: #8a5c0e;
+  --color-amber-bg: #f1e8d9;
+
+  --color-muted: #6e6f73;
+
+  --shadow-card: none;
+  --shadow-card-hover: none;
+
+  --radius-xs: 0px;
+  --radius-sm: 0px;
+  --radius-md: 0px;
+  --radius-lg: 0px;
+  --radius-xl: 0px;
+  --radius-2xl: 0px;
+  --radius-3xl: 0px;
+  --radius-4xl: 0px;
+  --radius: 0px;
+}
+
+:root {
+  --background: #f5f5f3;
+  --foreground: #16171a;
+  --surface: #ffffff;
+}
+
+html {
+  height: 100%;
+}
+
+html,
+body {
+  max-width: 100vw;
+  overflow-x: hidden;
+}
+
+body {
+  min-height: 100%;
+  color: var(--foreground);
+  background: var(--background);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+@layer base {
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
+}
+
+@layer components {
+  .input {
+    @apply w-full border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 outline-none transition-colors focus:border-brand-blue focus:ring-1 focus:ring-brand-blue/40;
+  }
+}

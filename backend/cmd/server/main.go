@@ -1,0 +1,191 @@
+package main
+
+import (
+	"context"
+	"log/slog"
+	"os"
+
+	"hr-management/backend/internal/attendance"
+	"hr-management/backend/internal/auth"
+	"hr-management/backend/internal/calculation"
+	"hr-management/backend/internal/clock"
+	"hr-management/backend/internal/config"
+	"hr-management/backend/internal/dashboard"
+	"hr-management/backend/internal/employee"
+	"hr-management/backend/internal/faceregistration"
+	"hr-management/backend/internal/health"
+	"hr-management/backend/internal/organization"
+	"hr-management/backend/pkg/database"
+	"hr-management/backend/pkg/middleware"
+	"hr-management/backend/pkg/redisclient"
+
+	"github.com/gin-gonic/gin"
+)
+
+func main() {
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	slog.SetDefault(logger)
+
+	cfg := config.Load()
+
+	ctx := context.Background()
+
+	db, err := database.Connect(ctx, cfg)
+	if err != nil {
+		slog.Error("failed to connect to postgres", "error", err)
+		os.Exit(1)
+	}
+	defer db.Close()
+
+	rdb := redisclient.Connect(cfg)
+	defer rdb.Close()
+
+	authRepo := auth.NewRepository(db)
+	sessions := auth.NewSessionStore(rdb, cfg.SessionTTLHours)
+	limiter := auth.NewLoginLimiter(rdb)
+	authHandlers := auth.NewHandlers(authRepo, sessions, limiter, cfg.CookieSecure)
+
+	if err := auth.EnsureSuperAdmin(ctx, authRepo, cfg.BootstrapAdminUser, cfg.BootstrapAdminPass); err != nil {
+		slog.Error("failed to bootstrap super admin", "error", err)
+		os.Exit(1)
+	}
+
+	orgRepo := organization.NewRepository(db)
+
+	empRepo := employee.NewRepository(db)
+	empHandlers := employee.NewHandlers(empRepo)
+	empDocHandlers := employee.NewDocumentHandlers(empRepo, cfg.StoragePath)
+
+	faceRepo := faceregistration.NewRepository(db)
+	faceClient := faceregistration.NewClient(cfg.FaceServiceURL)
+	faceHandlers := faceregistration.NewHandlers(faceRepo, faceClient, cfg.StoragePath)
+
+	calcRepo := calculation.NewRepository(db)
+	calcHandlers := calculation.NewHandlers(calcRepo)
+
+	// Calculation policy (late-streak limit, half-day/absent cutoffs, the
+	// stay-late pass, lunch OT streak) is admin-configurable — loaded from
+	// the database once here so it takes effect from the very first request,
+	// not just after the first save from Organization.
+	if policy, err := calcRepo.LoadPolicySettings(ctx); err != nil {
+		slog.Error("failed to load calculation policy settings, using defaults", "error", err)
+	} else {
+		calculation.SetCurrentPolicySettings(policy)
+	}
+
+	orgHandlers := organization.NewHandlers(orgRepo, calcRepo)
+
+	attendanceRepo := attendance.NewRepository(db)
+	attendanceHandlers := attendance.NewHandlers(attendanceRepo, faceRepo, faceClient, authRepo, calcRepo)
+
+	// The dashboard reports through the engine rather than querying raw events,
+	// so its numbers can't drift from what the shared attendance screen shows.
+	dashboardRepo := dashboard.NewRepository(db, calcRepo, empRepo)
+	dashboardHandlers := dashboard.NewHandlers(dashboardRepo)
+
+	gin.SetMode(gin.ReleaseMode)
+	router := gin.New()
+	router.Use(gin.Recovery(), middleware.CORS())
+
+	router.GET("/health", health.Handler(db, rdb))
+
+	api := router.Group("/api/v1")
+	{
+		authGroup := api.Group("/auth")
+		authGroup.POST("/login", authHandlers.Login)
+		authGroup.POST("/logout", authHandlers.Logout)
+		authGroup.POST("/refresh", authHandlers.Refresh)
+		authGroup.GET("/me", auth.RequireAuth(authRepo, sessions), authHandlers.Me)
+
+		requireAuth := auth.RequireAuth(authRepo, sessions)
+		// Super Admin only, same as the original — the literal role, not a
+		// delegable permission. Departments/Positions/Designations CRUD is
+		// deliberately not mounted at all in this duplicate (those tables
+		// stay, pre-seeded with one sensible default each, just with no
+		// management UI) — only Shifts + Calculation Settings are exposed.
+		requireSettings := auth.RequireRole("SUPER_ADMIN")
+
+		// Any signed-in user can see the clock — the same time every
+		// attendance calculation already uses, nothing sensitive about it.
+		api.GET("/clock", requireAuth, clock.Handler)
+
+		shifts := api.Group("/shifts", requireAuth)
+		shifts.GET("", orgHandlers.ListShifts)
+		shifts.POST("", requireSettings, orgHandlers.CreateShift)
+		shifts.PUT("/:id", requireSettings, orgHandlers.UpdateShift)
+		shifts.PATCH("/:id/active", requireSettings, orgHandlers.SetShiftActive)
+
+		// Departments/Positions/Designations have no management UI in this
+		// duplicate (pre-seeded with one default each instead) — only their
+		// read-only list endpoints stay mounted, since the Employee form's
+		// own dropdowns still need them to populate.
+		api.GET("/departments", requireAuth, orgHandlers.ListDepartments)
+		api.GET("/positions", requireAuth, orgHandlers.ListPositions)
+		api.GET("/designations", requireAuth, orgHandlers.ListDesignations)
+
+		policySettings := api.Group("/organization/policy-settings", requireAuth, requireSettings)
+		policySettings.GET("", orgHandlers.GetPolicySettings)
+		policySettings.PUT("", orgHandlers.UpdatePolicySettings)
+
+		// employees.view (read-only) vs employees.manage (add/edit) — a split
+		// specific to this duplicate's two-tier model: Super Admin can add/
+		// edit, the shared kiosk login can only view + register faces.
+		requireEmployeesView := auth.RequirePermission("employees.view")
+		requireEmployeesManage := auth.RequirePermission("employees.manage")
+		employees := api.Group("/employees", requireAuth, requireEmployeesView)
+		employees.GET("", empHandlers.List)
+		employees.GET("/:id", empHandlers.Get)
+		employees.POST("", requireEmployeesManage, empHandlers.Create)
+		employees.PUT("/:id", requireEmployeesManage, empHandlers.Update)
+		employees.PATCH("/:id/status", requireEmployeesManage, empHandlers.SetStatus)
+		employees.PATCH("/:id/self-checkin", requireEmployeesManage, empHandlers.SetRemoteSelfCheckin)
+		employees.POST("/:id/login", requireEmployeesManage, empHandlers.CreateLogin)
+
+		employees.GET("/:id/documents", empDocHandlers.ListDocuments)
+		employees.POST("/:id/documents/:type", requireEmployeesManage, empDocHandlers.UploadDocument)
+		employees.GET("/:id/documents/:type", empDocHandlers.DownloadDocument)
+
+		// Face registration is reachable by either permission — the shared
+		// kiosk login needs to register faces without being able to edit the
+		// employee record itself.
+		requireFaceReg := auth.RequireAnyPermission("employees.manage", "employees.view")
+		employees.POST("/:id/photo", requireEmployeesManage, faceHandlers.UploadPhoto)
+		employees.POST("/:id/face-samples", requireFaceReg, faceHandlers.Register)
+		employees.GET("/:id/face-samples", requireFaceReg, faceHandlers.List)
+		employees.PATCH("/:id/face-samples/:sampleType/deactivate", requireFaceReg, faceHandlers.Deactivate)
+		employees.POST("/:id/face-verify", requireFaceReg, faceHandlers.Verify)
+
+		// Deliberately outside the employees-gated group above: an avatar
+		// photo shows up in views that aren't all restricted to that
+		// permission, so any signed-in user can fetch any employee's photo.
+		api.GET("/employees/:id/face-photo", requireAuth, faceHandlers.GetPhoto)
+
+		requireAttendance := auth.RequirePermission("attendance.manage")
+		attendanceGroup := api.Group("/attendance", requireAuth, requireAttendance)
+		attendanceGroup.POST("", attendanceHandlers.Mark)
+		// MarkAuto is the walk-up, no-employee-selected 1:N face scan — the
+		// shared kiosk's actual "mark attendance" action.
+		attendanceGroup.POST("/auto", attendanceHandlers.MarkAuto)
+		attendanceGroup.GET("/today", attendanceHandlers.ListToday)
+		attendanceGroup.POST("/manual", attendanceHandlers.RecordManual)
+		attendanceGroup.GET("/events", attendanceHandlers.ListForEmployeeOn)
+		attendanceGroup.GET("/history", calcHandlers.GetHistory)
+		attendanceGroup.GET("/calculated", calcHandlers.GetCalculated)
+		attendanceGroup.POST("/recalculate", calcHandlers.Recalculate)
+		attendanceGroup.POST("/absence-override", auth.RequireRole("SUPER_ADMIN"), calcHandlers.SetAbsenceOverride)
+
+		dashboardGroup := api.Group("/dashboard", requireAuth, requireAttendance)
+		dashboardGroup.GET("/summary", dashboardHandlers.GetSummary)
+		dashboardGroup.GET("/trend", dashboardHandlers.GetTrend)
+		dashboardGroup.GET("/holidays", dashboardHandlers.GetUpcomingHolidays)
+		dashboardGroup.GET("/birthdays", dashboardHandlers.GetUpcomingBirthdays)
+		dashboardGroup.GET("/day-detail", dashboardHandlers.GetDayDetail)
+	}
+
+	addr := ":" + cfg.BackendPort
+	slog.Info("starting server", "addr", addr)
+	if err := router.Run(addr); err != nil {
+		slog.Error("server failed", "error", err)
+		os.Exit(1)
+	}
+}

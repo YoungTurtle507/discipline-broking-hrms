@@ -1,0 +1,3 @@
+DROP TABLE IF EXISTS shifts;
+DROP TABLE IF EXISTS designations;
+DROP TABLE IF EXISTS departments;

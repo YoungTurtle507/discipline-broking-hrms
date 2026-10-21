@@ -1,0 +1,2 @@
+-- Postgres has no DROP VALUE for enums — these four values are permanent
+-- once added. Nothing to revert.

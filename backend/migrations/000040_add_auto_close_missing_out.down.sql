@@ -1,0 +1,2 @@
+-- Postgres has no DROP VALUE for enums — AUTO_CLOSED and
+-- ATTENDANCE_AUTO_CLOSED are permanent once added. Nothing to revert.

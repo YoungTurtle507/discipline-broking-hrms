@@ -1,0 +1,2 @@
+-- Postgres has no DROP VALUE for enums — HALF_DAY is permanent once added.
+-- Nothing to revert there.

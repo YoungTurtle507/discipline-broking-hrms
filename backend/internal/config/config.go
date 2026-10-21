@@ -37,7 +37,10 @@ type Config struct {
 
 func Load() *Config {
 	return &Config{
-		BackendPort:    getEnv("BACKEND_PORT", "8080"),
+		// Render (and most other PaaS hosts) assign the listen port at
+		// runtime via PORT and route traffic to exactly that port — BACKEND_PORT
+		// stays the local-dev override since PORT isn't set there.
+		BackendPort:    getEnv("PORT", getEnv("BACKEND_PORT", "8080")),
 		DBHost:         getEnv("DB_HOST", "postgres"),
 		DBPort:         getEnv("DB_PORT", "5432"),
 		DBUser:         getEnv("POSTGRES_USER", "hr_admin"),

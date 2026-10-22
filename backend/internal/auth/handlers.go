@@ -65,7 +65,7 @@ func (h *Handlers) Logout(c *gin.Context) {
 	if err == nil {
 		h.sessions.Delete(c.Request.Context(), sessionID)
 	}
-	c.SetCookie(sessionCookieName, "", -1, "/", "", h.cookieSecure, true)
+	h.clearSessionCookie(c)
 	c.JSON(http.StatusOK, gin.H{"status": "logged out"})
 }
 
@@ -96,6 +96,22 @@ func (h *Handlers) Me(c *gin.Context) {
 	c.JSON(http.StatusOK, uc)
 }
 
+// The frontend and backend are deployed on different domains (Vercel and
+// Render), so the session cookie is cross-site from the browser's point of
+// view and needs SameSite=None to be sent on those requests at all — browsers
+// only honor None alongside Secure, so this only applies when cookieSecure is
+// on (local dev stays on the implicit Lax default, where the cookie is
+// same-site anyway since the Next.js dev server proxies /api same-origin).
 func (h *Handlers) setSessionCookie(c *gin.Context, sessionID string) {
+	if h.cookieSecure {
+		c.SetSameSite(http.SameSiteNoneMode)
+	}
 	c.SetCookie(sessionCookieName, sessionID, int(h.sessions.TTL().Seconds()), "/", "", h.cookieSecure, true)
+}
+
+func (h *Handlers) clearSessionCookie(c *gin.Context) {
+	if h.cookieSecure {
+		c.SetSameSite(http.SameSiteNoneMode)
+	}
+	c.SetCookie(sessionCookieName, "", -1, "/", "", h.cookieSecure, true)
 }

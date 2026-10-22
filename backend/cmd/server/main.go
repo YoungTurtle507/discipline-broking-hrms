@@ -118,13 +118,26 @@ func main() {
 		shifts.PUT("/:id", requireSettings, orgHandlers.UpdateShift)
 		shifts.PATCH("/:id/active", requireSettings, orgHandlers.SetShiftActive)
 
-		// Departments/Positions/Designations have no management UI in this
-		// duplicate (pre-seeded with one default each instead) — only their
-		// read-only list endpoints stay mounted, since the Employee form's
-		// own dropdowns still need them to populate.
-		api.GET("/departments", requireAuth, orgHandlers.ListDepartments)
-		api.GET("/positions", requireAuth, orgHandlers.ListPositions)
-		api.GET("/designations", requireAuth, orgHandlers.ListDesignations)
+		// Departments/Positions/Designations: any signed-in user can read
+		// them (the Employee form's own dropdowns need them to populate),
+		// only a Super Admin can manage them — same split as Shifts.
+		departments := api.Group("/departments", requireAuth)
+		departments.GET("", orgHandlers.ListDepartments)
+		departments.POST("", requireSettings, orgHandlers.CreateDepartment)
+		departments.PUT("/:id", requireSettings, orgHandlers.UpdateDepartment)
+		departments.PATCH("/:id/active", requireSettings, orgHandlers.SetDepartmentActive)
+
+		positions := api.Group("/positions", requireAuth)
+		positions.GET("", orgHandlers.ListPositions)
+		positions.POST("", requireSettings, orgHandlers.CreatePosition)
+		positions.PUT("/:id", requireSettings, orgHandlers.UpdatePosition)
+		positions.PATCH("/:id/active", requireSettings, orgHandlers.SetPositionActive)
+
+		designations := api.Group("/designations", requireAuth)
+		designations.GET("", orgHandlers.ListDesignations)
+		designations.POST("", requireSettings, orgHandlers.CreateDesignation)
+		designations.PUT("/:id", requireSettings, orgHandlers.UpdateDesignation)
+		designations.PATCH("/:id/active", requireSettings, orgHandlers.SetDesignationActive)
 
 		policySettings := api.Group("/organization/policy-settings", requireAuth, requireSettings)
 		policySettings.GET("", orgHandlers.GetPolicySettings)

@@ -66,10 +66,11 @@ export type Shift = {
   is_active: boolean;
 };
 
-export type Department = { id: number; name: string; is_active: boolean };
+export type Department = { id: number; name: string; description: string; is_active: boolean };
 export type Designation = {
   id: number;
   title: string;
+  description: string;
   department_id: number;
   department_name: string;
   is_active: boolean;

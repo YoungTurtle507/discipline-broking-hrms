@@ -5,7 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
-import { X, SidebarSimple, SquaresFour, Users, Fingerprint, type Icon } from "@phosphor-icons/react";
+import { X, SidebarSimple, SquaresFour, Users, Fingerprint, Buildings, type Icon } from "@phosphor-icons/react";
 import { useSession } from "./SessionProvider";
 
 // `permission` is the backend permission code that gates the page's API. An
@@ -28,12 +28,14 @@ type NavItem = {
 
 // Only two logins exist in this duplicate: Super Admin (bypasses every
 // permission check) and the shared kiosk account (employees.view +
-// attendance.manage — see backend/migrations/000050_add_kiosk_role). Three
-// modules, nothing else.
+// attendance.manage — see backend/migrations/000050_add_kiosk_role).
+// Organization is Super Admin only, full stop (requireRole, not permission)
+// — the kiosk login has no business renaming departments.
 const NAV_ITEMS: NavItem[] = [
   { label: "Dashboard", href: "/dashboard", icon: SquaresFour, enabled: true },
   { label: "Employees", href: "/dashboard/employees", icon: Users, enabled: true, permission: "employees.view" },
   { label: "Attendance", href: "/dashboard/attendance", icon: Fingerprint, enabled: true, permission: "attendance.manage" },
+  { label: "Organization", href: "/dashboard/organization", icon: Buildings, enabled: true, requireRole: "SUPER_ADMIN" },
 ];
 
 // A shared spring for every size/position change in this file — one motion

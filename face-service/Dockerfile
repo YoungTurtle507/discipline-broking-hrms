@@ -13,4 +13,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 EXPOSE 8000
-CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Shell form (not exec form) so ${PORT:-8000} actually expands — Render (and
+# most other PaaS hosts) assign the listen port at runtime via PORT and route
+# traffic to exactly that port; local dev doesn't set it, hence the fallback.
+CMD uvicorn api.main:app --host 0.0.0.0 --port ${PORT:-8000}

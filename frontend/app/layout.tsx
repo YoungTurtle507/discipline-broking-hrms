@@ -26,7 +26,7 @@ const manrope = Manrope({
 });
 
 export const metadata: Metadata = {
-  title: "YT HRMS",
+  title: "DB HRMS",
   description: "Secure, contactless attendance and HR management powered by face recognition.",
 };
 

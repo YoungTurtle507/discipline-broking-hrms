@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
@@ -111,7 +110,9 @@ export function Sidebar({
               at h-16 to match the Topbar's own height exactly (py-2.5 around a
               36px avatar button there), so the two line up edge to edge. */}
           <div className="-mx-4 -mt-4.5 mb-5 flex h-16 items-center justify-between bg-navy px-4">
-            <Image src="/yt-logo.png" alt="Young Turtle" width={692} height={215} className="h-11 w-auto" priority />
+            {/* Text wordmark until the firm's logo is ready — swap for an
+                <Image>, same as the other two spots below, once one exists. */}
+            <span className="truncate text-[17px] font-extrabold tracking-tight text-white">Discipline Broking</span>
             <div className="flex items-center gap-1">
               {/* The one and only sidebar hide/show control — top-right of
                   the sidebar's own header, nowhere else (not the Topbar, not
@@ -212,10 +213,11 @@ export function Sidebar({
             className="absolute inset-y-0 left-0 z-40 hidden flex-col overflow-hidden border-r border-slate-200 bg-white shadow-[0_12px_32px_-8px_rgba(22,23,26,0.18)] lg:flex"
           >
             {/* Header crossfades between two looks: at rest, just the
-                compact mark (yt-logo-mark.png) — hovered ("elaborated"), the
-                exact same header the fixed sidebar itself shows: full
-                wordmark plus the pin-open icon — so hovering genuinely
-                previews what clicking to fix it open gives you. */}
+                compact "DB" mark (text until the firm's logo is ready) —
+                hovered ("elaborated"), the exact same header the fixed
+                sidebar itself shows: full wordmark plus the pin-open icon —
+                so hovering genuinely previews what clicking to fix it open
+                gives you. */}
             <div className="relative h-16 w-56 shrink-0 overflow-hidden border-b border-slate-100 bg-navy">
               <AnimatePresence initial={false}>
                 {railHovered ? (
@@ -227,7 +229,7 @@ export function Sidebar({
                     transition={{ duration: 0.12 }}
                     className="absolute inset-0 flex items-center justify-between px-4"
                   >
-                    <Image src="/yt-logo.png" alt="Young Turtle" width={692} height={215} className="h-11 w-auto" priority />
+                    <span className="truncate text-[17px] font-extrabold tracking-tight text-white">Discipline Broking</span>
                     <motion.button
                       type="button"
                       onClick={onToggleCollapse}
@@ -260,8 +262,8 @@ export function Sidebar({
                         rail's own width animates, so centering against the
                         header directly would center it out past the visible
                         edge. */}
-                    <span className="flex h-16 w-16 shrink-0 items-center justify-center">
-                      <Image src="/yt-logo-mark.png" alt="Young Turtle" width={287} height={215} className="h-8 w-auto" priority />
+                    <span className="flex h-16 w-16 shrink-0 items-center justify-center text-base font-extrabold tracking-tight text-white">
+                      DB
                     </span>
                   </motion.button>
                 )}

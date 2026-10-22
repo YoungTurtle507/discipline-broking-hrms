@@ -6,11 +6,13 @@ import {
   Camera,
   CheckCircle,
   ClockCounterClockwise,
+  HourglassMedium,
   LockKey,
   ScanSmiley,
   SignIn,
   SignOut,
   WarningCircle,
+  XCircle,
   X,
 } from "@phosphor-icons/react";
 import { apiFetch, apiUpload, ApiError } from "@/lib/api";
@@ -20,7 +22,7 @@ import { StatCard } from "../_components/StatCard";
 import { DayDetailModal } from "../_components/DayDetailModal";
 import { EmployeeSearchPicker } from "../_components/EmployeeSearchPicker";
 import { formatDate } from "../_components/my/types";
-import { labelAttendanceEvents, type AttendanceEvent, type Employee, type OutReason } from "../employees/_components/types";
+import { labelAttendanceEvents, type AttendanceEvent, type Employee, type ManualRequest, type OutReason } from "../employees/_components/types";
 import { useSession } from "../_components/SessionProvider";
 
 const OUT_REASON_LABEL: Record<OutReason, string> = {
@@ -57,11 +59,16 @@ type TodaySnapshot = {
 };
 
 export default function AttendancePage() {
+  const { me } = useSession();
+  const isSuperAdmin = me?.roles.includes("SUPER_ADMIN") ?? false;
+
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [todayEvents, setTodayEvents] = useState<AttendanceEvent[]>([]);
   const [snapshot, setSnapshot] = useState<TodaySnapshot | null>(null);
   const [markOpen, setMarkOpen] = useState(false);
   const [manualOpen, setManualOpen] = useState(false);
+  const [requestsOpen, setRequestsOpen] = useState(false);
+  const [pendingCount, setPendingCount] = useState(0);
   const [employeeFilter, setEmployeeFilter] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [drill, setDrill] = useState<{
@@ -79,6 +86,16 @@ export default function AttendancePage() {
     }
   }
 
+  async function loadPendingCount() {
+    if (!isSuperAdmin) return;
+    try {
+      const data = await apiFetch<{ requests: ManualRequest[] | null }>("/api/v1/attendance/manual-requests");
+      setPendingCount((data.requests ?? []).length);
+    } catch {
+      // Non-critical — the button just shows no badge if this fails.
+    }
+  }
+
   useEffect(() => {
     if (new URLSearchParams(window.location.search).get("auto") === "1") {
       setMarkOpen(true);
@@ -90,7 +107,13 @@ export default function AttendancePage() {
       .then(setSnapshot)
       .catch(() => {});
     loadToday();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    loadPendingCount();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSuperAdmin]);
 
   const filteredEvents = employeeFilter
     ? todayEvents.filter((ev) => String(ev.employee_id) === employeeFilter)
@@ -106,6 +129,21 @@ export default function AttendancePage() {
           <p className="mt-1 text-sm text-slate-500">Live face-scan attendance and today&apos;s activity.</p>
         </div>
         <div className="flex flex-wrap gap-2">
+          {isSuperAdmin && (
+            <button
+              type="button"
+              onClick={() => setRequestsOpen(true)}
+              className="relative flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              <HourglassMedium size={16} />
+              Pending Requests
+              {pendingCount > 0 && (
+                <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-warning px-1.5 text-xs font-bold text-white">
+                  {pendingCount}
+                </span>
+              )}
+            </button>
+          )}
           <button
             type="button"
             onClick={() => setManualOpen(true)}
@@ -229,9 +267,25 @@ export default function AttendancePage() {
       {manualOpen && (
         <ManualEntryModal
           employees={employees}
-          onClose={() => setManualOpen(false)}
+          onClose={() => {
+            setManualOpen(false);
+            // Covers the kiosk's "submitted, pending approval" path too —
+            // that one never calls onRecorded (nothing landed in today's
+            // feed yet), but the pending badge still needs to pick it up.
+            loadPendingCount();
+          }}
           onRecorded={() => {
             setManualOpen(false);
+            loadToday();
+          }}
+        />
+      )}
+
+      {requestsOpen && (
+        <ManualRequestsModal
+          onClose={() => setRequestsOpen(false)}
+          onReviewed={() => {
+            loadPendingCount();
             loadToday();
           }}
         />
@@ -593,13 +647,19 @@ function ManualEntryModal({
   // before the entry actually gets recorded.
   const [stage, setStage] = useState<"form" | "password">("form");
   const [password, setPassword] = useState("");
+  // Set once a non-Super-Admin's submission comes back pending approval
+  // instead of recorded — see Handlers.RecordManual's branch on
+  // IsSuperAdmin(). Nothing was actually recorded yet, so this shows its
+  // own confirmation rather than calling onRecorded (which refreshes
+  // today's feed — there's nothing new in it yet).
+  const [submittedPending, setSubmittedPending] = useState(false);
 
   async function submit(withPassword?: string) {
     if (!selected) return;
     setSaving(true);
     setError(null);
     try {
-      await apiFetch("/api/v1/attendance/manual", {
+      const result = await apiFetch<{ pending_approval?: boolean }>("/api/v1/attendance/manual", {
         method: "POST",
         body: JSON.stringify({
           employee_id: selected.id,
@@ -610,7 +670,11 @@ function ManualEntryModal({
           ...(withPassword ? { password: withPassword } : {}),
         }),
       });
-      onRecorded();
+      if (result.pending_approval) {
+        setSubmittedPending(true);
+      } else {
+        onRecorded();
+      }
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to record the entry");
     } finally {
@@ -632,6 +696,27 @@ function ManualEntryModal({
   function handlePasswordSubmit(e: React.FormEvent) {
     e.preventDefault();
     submit(password);
+  }
+
+  if (submittedPending) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4">
+        <div className="w-full max-w-md rounded-xl bg-white p-6 text-center shadow-xl">
+          <CheckCircle size={40} weight="fill" className="mx-auto mb-3 text-brand-blue" />
+          <h2 className="mb-1 text-base font-semibold text-slate-900">Request Submitted</h2>
+          <p className="mb-5 text-sm text-slate-500">
+            Waiting on Super Admin approval for {selected?.full_name}&apos;s entry — it won&apos;t appear in attendance until then.
+          </p>
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-full rounded-lg bg-brand-blue px-4 py-2.5 text-sm font-semibold text-white hover:bg-brand-blue-dark"
+          >
+            Done
+          </button>
+        </div>
+      </div>
+    );
   }
 
   if (stage === "password") {
@@ -802,6 +887,113 @@ function ManualEntryModal({
             </button>
           </div>
         </form>
+      </div>
+    </div>
+  );
+}
+
+// Super Admin's review queue for the kiosk login's missed-scan corrections —
+// each one only becomes a real attendance event once approved here (see
+// Handlers.ApproveManualRequest, which re-checks the IN/OUT alternation
+// rule against whatever's on record *now*, not just at submission time).
+function ManualRequestsModal({ onClose, onReviewed }: { onClose: () => void; onReviewed: () => void }) {
+  const [requests, setRequests] = useState<ManualRequest[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [actingOn, setActingOn] = useState<number | null>(null);
+
+  async function load() {
+    try {
+      const data = await apiFetch<{ requests: ManualRequest[] | null }>("/api/v1/attendance/manual-requests");
+      setRequests(data.requests ?? []);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Failed to load requests");
+    }
+  }
+
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function act(id: number, action: "approve" | "reject") {
+    setActingOn(id);
+    setError(null);
+    try {
+      await apiFetch(`/api/v1/attendance/manual-requests/${id}/${action}`, { method: "POST" });
+      setRequests((prev) => (prev ?? []).filter((r) => r.id !== id));
+      onReviewed();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : `Failed to ${action} the request`);
+    } finally {
+      setActingOn(null);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4">
+      <div className="max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-xl bg-white p-6 shadow-xl">
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-base font-semibold text-slate-900">Pending Requests</h2>
+          <button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-600">
+            <X size={20} />
+          </button>
+        </div>
+
+        {error && <p className="mb-3 text-sm text-error">{error}</p>}
+
+        {requests === null ? (
+          <p className="py-6 text-center text-sm text-slate-400">Loading…</p>
+        ) : requests.length === 0 ? (
+          <p className="py-6 text-center text-sm text-slate-400">No pending requests.</p>
+        ) : (
+          <div className="flex flex-col gap-3">
+            {requests.map((r) => (
+              <div key={r.id} className="rounded-lg border border-slate-200 p-4">
+                <div className="mb-2 flex items-start justify-between gap-2">
+                  <div>
+                    <p className="text-sm font-semibold text-slate-800">{r.employee_name}</p>
+                    <p className="text-xs text-slate-400">
+                      {r.direction} &middot; {formatDate(r.event_time)} &middot;{" "}
+                      {new Date(r.event_time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                      {r.out_reason ? ` (${OUT_REASON_LABEL[r.out_reason]})` : ""}
+                    </p>
+                  </div>
+                  <span
+                    className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${
+                      r.direction === "IN" ? "bg-success-bg text-success" : "bg-warning-bg text-warning"
+                    }`}
+                  >
+                    {r.direction}
+                  </span>
+                </div>
+                <p className="mb-3 text-sm text-slate-600">{r.note}</p>
+                <p className="mb-3 text-xs text-slate-400">
+                  Requested by {r.requested_by_name} &middot; {new Date(r.created_at).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    disabled={actingOn === r.id}
+                    onClick={() => act(r.id, "approve")}
+                    className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-success px-3 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <CheckCircle size={15} weight="bold" />
+                    Approve
+                  </button>
+                  <button
+                    type="button"
+                    disabled={actingOn === r.id}
+                    onClick={() => act(r.id, "reject")}
+                    className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <XCircle size={15} weight="bold" />
+                    Reject
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

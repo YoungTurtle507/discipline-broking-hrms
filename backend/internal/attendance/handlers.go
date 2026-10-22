@@ -393,6 +393,28 @@ func (h *Handlers) RecordManual(c *gin.Context) {
 	if req.OutReason != "" {
 		reasonPtr = &req.OutReason
 	}
+
+	// A Super Admin's own correction records immediately — there's no one
+	// else to approve it. The kiosk login's correction becomes a request
+	// instead: it only ever gets recorded once a Super Admin approves it
+	// (see ApproveManualRequest), re-checked against whatever's on record
+	// at approval time, not just now.
+	if !uc.IsSuperAdmin() {
+		request, err := h.repo.CreateManualRequest(c.Request.Context(), req.EmployeeID, req.Direction, eventTime, strings.TrimSpace(req.Note), reasonPtr, uc.UserID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to submit the request"})
+			return
+		}
+		slog.Info("manual attendance request submitted",
+			"employee_id", req.EmployeeID,
+			"direction", req.Direction,
+			"event_time", eventTime,
+			"requested_by", uc.UserID,
+		)
+		c.JSON(http.StatusAccepted, gin.H{"request": request, "pending_approval": true})
+		return
+	}
+
 	event, err := h.repo.RecordManual(c.Request.Context(), req.EmployeeID, req.Direction, eventTime, strings.TrimSpace(req.Note), uc.UserID, reasonPtr)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to record the entry"})

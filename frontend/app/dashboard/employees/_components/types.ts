@@ -103,6 +103,27 @@ export type AttendanceEvent = {
   photo_path?: string | null;
 };
 
+// A kiosk-submitted correction awaiting Super Admin approval — see
+// backend/internal/attendance/manual_requests.go. Only ever created for a
+// non-Super-Admin submission; a Super Admin's own correction records
+// immediately as a normal AttendanceEvent instead.
+export type ManualRequest = {
+  id: number;
+  employee_id: number;
+  employee_name: string;
+  direction: AttendanceDirection;
+  event_time: string;
+  note: string;
+  out_reason?: OutReason | null;
+  status: "PENDING" | "APPROVED" | "REJECTED";
+  requested_by: number;
+  requested_by_name: string;
+  reviewed_by: number | null;
+  reviewed_at: string | null;
+  created_event_id: number | null;
+  created_at: string;
+};
+
 export type EventLabel = "Office In" | "Office Out" | "Lunch In" | "Lunch Out" | "Personal In" | "Personal Out";
 
 const BREAK_LABEL: Partial<Record<OutReason, "Lunch" | "Personal">> = {

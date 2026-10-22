@@ -177,6 +177,14 @@ func main() {
 		attendanceGroup.GET("/events/:id/photo", attendanceHandlers.GetPhoto)
 		attendanceGroup.POST("/manual", attendanceHandlers.RecordManual)
 		attendanceGroup.GET("/events", attendanceHandlers.ListForEmployeeOn)
+
+		// The kiosk login's manual corrections land here pending a Super
+		// Admin's approval (see RecordManual) — Super Admin only, same as
+		// the Organization pages, no permission grant can substitute.
+		requireSuperAdmin := auth.RequireRole("SUPER_ADMIN")
+		attendanceGroup.GET("/manual-requests", requireSuperAdmin, attendanceHandlers.ListManualRequests)
+		attendanceGroup.POST("/manual-requests/:id/approve", requireSuperAdmin, attendanceHandlers.ApproveManualRequest)
+		attendanceGroup.POST("/manual-requests/:id/reject", requireSuperAdmin, attendanceHandlers.RejectManualRequest)
 		attendanceGroup.GET("/history", calcHandlers.GetHistory)
 		attendanceGroup.GET("/calculated", calcHandlers.GetCalculated)
 		attendanceGroup.POST("/recalculate", calcHandlers.Recalculate)

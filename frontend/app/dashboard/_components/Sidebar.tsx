@@ -5,7 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
-import { X, SidebarSimple, SquaresFour, Users, Fingerprint, Buildings, type Icon } from "@phosphor-icons/react";
+import { X, SidebarSimple, SquaresFour, Users, Fingerprint, Buildings, ChartBar, type Icon } from "@phosphor-icons/react";
 import { useSession } from "./SessionProvider";
 
 // `permission` is the backend permission code that gates the page's API. An
@@ -36,6 +36,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: "Employees", href: "/dashboard/employees", icon: Users, enabled: true, permission: "employees.view" },
   { label: "Attendance", href: "/dashboard/attendance", icon: Fingerprint, enabled: true, permission: "attendance.manage" },
   { label: "Organization", href: "/dashboard/organization", icon: Buildings, enabled: true, requireRole: "SUPER_ADMIN" },
+  { label: "Reports", href: "/dashboard/reports", icon: ChartBar, enabled: true, requireRole: "SUPER_ADMIN" },
 ];
 
 // A shared spring for every size/position change in this file — one motion

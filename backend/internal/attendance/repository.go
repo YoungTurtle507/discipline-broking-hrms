@@ -180,6 +180,39 @@ func (r *Repository) NeighboringEvents(ctx context.Context, employeeID int64, t 
 	return prev, next, nil
 }
 
+// EventsInRange is the Reports page's data source — every event in
+// [from, to] (inclusive), optionally narrowed to one employee, newest
+// first. employeeID nil means every employee. Powers both the attendance
+// report (IN/OUT history) and the captured-photos viewer, which are the
+// same underlying data shown two different ways.
+func (r *Repository) EventsInRange(ctx context.Context, employeeID *int64, from, to string) ([]Event, error) {
+	rows, err := r.db.Query(ctx,
+		`SELECT ae.id, ae.employee_id, e.full_name, ae.direction, ae.event_time, ae.confidence,
+		        ae.model_name, ae.model_version, ae.verified_by, ae.source, ae.note, ae.out_reason, ae.photo_path
+		 FROM attendance_events ae
+		 JOIN employees e ON e.id = ae.employee_id
+		 WHERE ae.event_time::date BETWEEN $1::date AND $2::date
+		   AND ($3::bigint IS NULL OR ae.employee_id = $3)
+		 ORDER BY ae.event_time DESC`,
+		from, to, employeeID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := []Event{}
+	for rows.Next() {
+		var e Event
+		if err := rows.Scan(&e.ID, &e.EmployeeID, &e.EmployeeName, &e.Direction, &e.EventTime, &e.Confidence,
+			&e.ModelName, &e.ModelVersion, &e.VerifiedBy, &e.Source, &e.Note, &e.OutReason, &e.PhotoPath); err != nil {
+			return nil, err
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
 // EventsOn returns an employee's events for one date, so a caller can show the
 // admin what's already recorded before they add anything.
 func (r *Repository) EventsOn(ctx context.Context, employeeID int64, date string) ([]Event, error) {

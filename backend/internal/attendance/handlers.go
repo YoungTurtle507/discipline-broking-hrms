@@ -432,6 +432,45 @@ func (h *Handlers) RecordManual(c *gin.Context) {
 	c.JSON(http.StatusCreated, event)
 }
 
+// GetReport is the Reports page's data source — every event in a date
+// range, optionally narrowed to one employee. Serves both the attendance
+// (IN/OUT) tab and the captured-photos tab, which show the same events
+// differently; defaults to the last 30 days when from/to aren't given.
+func (h *Handlers) GetReport(c *gin.Context) {
+	from := c.Query("from")
+	to := c.Query("to")
+	if from == "" || to == "" {
+		to = clock.Now().Format("2006-01-02")
+		from = clock.Now().AddDate(0, 0, -30).Format("2006-01-02")
+	} else {
+		if _, err := time.Parse("2006-01-02", from); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "valid from date is required (YYYY-MM-DD)"})
+			return
+		}
+		if _, err := time.Parse("2006-01-02", to); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "valid to date is required (YYYY-MM-DD)"})
+			return
+		}
+	}
+
+	var employeeID *int64
+	if raw := c.Query("employee_id"); raw != "" {
+		id, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid employee_id"})
+			return
+		}
+		employeeID = &id
+	}
+
+	events, err := h.repo.EventsInRange(c.Request.Context(), employeeID, from, to)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load report"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"events": events})
+}
+
 // ListForEmployeeOn shows what is already recorded for one employee on one
 // date, so an admin can see the gap before filling it.
 func (h *Handlers) ListForEmployeeOn(c *gin.Context) {

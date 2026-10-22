@@ -185,6 +185,11 @@ func main() {
 		attendanceGroup.GET("/manual-requests", requireSuperAdmin, attendanceHandlers.ListManualRequests)
 		attendanceGroup.POST("/manual-requests/:id/approve", requireSuperAdmin, attendanceHandlers.ApproveManualRequest)
 		attendanceGroup.POST("/manual-requests/:id/reject", requireSuperAdmin, attendanceHandlers.RejectManualRequest)
+
+		// Reports: attendance IN/OUT history and the captured-photos viewer,
+		// Super Admin only — the same event data Today's Attendance already
+		// shows everyone, just over an arbitrary range instead of just today.
+		attendanceGroup.GET("/report", requireSuperAdmin, attendanceHandlers.GetReport)
 		attendanceGroup.GET("/history", calcHandlers.GetHistory)
 		attendanceGroup.GET("/calculated", calcHandlers.GetCalculated)
 		attendanceGroup.POST("/recalculate", calcHandlers.Recalculate)

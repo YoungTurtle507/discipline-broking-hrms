@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
-import { X, SidebarSimple, SquaresFour, Users, Fingerprint, Buildings, ChartBar, type Icon } from "@phosphor-icons/react";
+import { X, SidebarSimple, SquaresFour, Users, Fingerprint, CalendarCheck, Buildings, ChartBar, type Icon } from "@phosphor-icons/react";
 import { useSession } from "./SessionProvider";
 
 // `permission` is the backend permission code that gates the page's API. An
@@ -34,6 +35,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: "Dashboard", href: "/dashboard", icon: SquaresFour, enabled: true },
   { label: "Employees", href: "/dashboard/employees", icon: Users, enabled: true, permission: "employees.view" },
   { label: "Attendance", href: "/dashboard/attendance", icon: Fingerprint, enabled: true, permission: "attendance.manage" },
+  { label: "Leave", href: "/dashboard/leave", icon: CalendarCheck, enabled: true, permission: "leave.request_own" },
   { label: "Organization", href: "/dashboard/organization", icon: Buildings, enabled: true, requireRole: "SUPER_ADMIN" },
   { label: "Reports", href: "/dashboard/reports", icon: ChartBar, enabled: true, requireRole: "SUPER_ADMIN" },
 ];
@@ -43,6 +45,22 @@ const NAV_ITEMS: NavItem[] = [
 // own feel.
 const SPRING = { type: "spring" as const, stiffness: 420, damping: 34, mass: 0.9 };
 
+// Genuinely large/ultra-wide external monitors only — deliberately well
+// above a normal 1920px desktop screen, which must render exactly as it
+// always has. Drives the few sizes here that framer-motion animates in JS
+// (the collapsed rail's hover width) and so can't be reached by a plain
+// Tailwind `uw:` class; everything else uses that class directly.
+function useUltraWide() {
+  const [ultraWide, setUltraWide] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(min-width: 1990px)");
+    const update = () => setUltraWide(mq.matches);
+    update();
+    mq.addEventListener("change", update);
+    return () => mq.removeEventListener("change", update);
+  }, []);
+  return ultraWide;
+}
 
 export function Sidebar({
   open,
@@ -64,6 +82,7 @@ export function Sidebar({
   const pathname = usePathname();
   const { can, me, employee, loading } = useSession();
   const reduceMotion = useReducedMotion();
+  const ultraWide = useUltraWide();
   // Drives the rail's hover-elaborate — framer-motion's own hover handlers
   // rather than raw CSS :hover, so the width itself is a spring the same way
   // every other move in this file is, not a linear CSS transition.
@@ -96,7 +115,7 @@ export function Sidebar({
       <aside
         className={[
           "fixed inset-y-0 left-0 z-50 flex h-full w-56 shrink-0 -translate-x-full flex-col border-r border-slate-200 bg-white text-slate-600 transition-transform duration-150 ease-out",
-          collapsed ? "lg:relative lg:w-16" : "lg:w-56",
+          collapsed ? "lg:relative lg:w-16" : "lg:w-56 uw:w-[280px]!",
           "lg:static lg:translate-x-0",
           open ? "translate-x-0" : "",
         ].join(" ")}
@@ -110,9 +129,7 @@ export function Sidebar({
               at h-16 to match the Topbar's own height exactly (py-2.5 around a
               36px avatar button there), so the two line up edge to edge. */}
           <div className="-mx-4 -mt-4.5 mb-5 flex h-16 items-center justify-between bg-navy px-4">
-            {/* Text wordmark until the firm's logo is ready — swap for an
-                <Image>, same as the other two spots below, once one exists. */}
-            <span className="truncate text-[17px] font-extrabold tracking-tight text-white">Discipline Broking</span>
+            <Image src="/discipline-logo-outline.png" alt="Discipline Broking" width={1199} height={407} className="h-14 w-auto shrink-0 uw:h-16!" priority />
             <div className="flex items-center gap-1">
               {/* The one and only sidebar hide/show control — top-right of
                   the sidebar's own header, nowhere else (not the Topbar, not
@@ -139,16 +156,16 @@ export function Sidebar({
               </button>
             </div>
           </div>
-          <p className="mb-5 px-1 font-mono text-[10px] tracking-wider text-slate-400">HRMS / OPS-16.2</p>
+          <p className="mb-5 px-1 font-mono text-[10px] tracking-wider text-slate-400 uw:text-[12.5px]!">HRMS / OPS-16.2</p>
 
-          <p className="mb-1.5 px-1 font-mono text-[9.5px] font-semibold uppercase tracking-widest text-slate-400">
+          <p className="mb-1.5 px-1 font-mono text-[9.5px] font-semibold uppercase tracking-widest text-slate-400 uw:text-[12px]!">
             Modules
           </p>
           <nav className="flex flex-1 flex-col">
             {visibleItems.map(({ label, href, icon: ItemIcon, enabled }) => {
               const active = enabled && pathname === href;
               const rowClassName = [
-                "relative -ml-px flex items-center gap-2.5 px-3 py-[5px] text-[13px] transition-colors",
+                "relative -ml-px flex items-center gap-2.5 px-3 py-2.5 text-[13px] transition-colors uw:gap-[12.5px]! uw:px-[15px]! uw:py-[12.5px]! uw:text-[16.25px]!",
                 enabled ? (active ? "font-semibold text-slate-900" : "text-slate-600 hover:text-slate-900") : "cursor-not-allowed text-slate-300",
               ].join(" ");
 
@@ -169,7 +186,7 @@ export function Sidebar({
 
               const content = (
                 <>
-                  <ItemIcon size={16} weight={active ? "fill" : "regular"} className="relative z-10 shrink-0" />
+                  <ItemIcon size={ultraWide ? 20 : 16} weight={active ? "fill" : "regular"} className="relative z-10 shrink-0" />
                   <span className="relative z-10">{label}</span>
                 </>
               );
@@ -208,17 +225,17 @@ export function Sidebar({
             onHoverStart={() => setRailHovered(true)}
             onHoverEnd={() => setRailHovered(false)}
             initial={false}
-            animate={{ width: railHovered ? 224 : 64 }}
+            animate={{ width: railHovered ? (ultraWide ? 280 : 224) : 64 }}
             transition={reduceMotion ? { duration: 0 } : SPRING}
             className="absolute inset-y-0 left-0 z-40 hidden flex-col overflow-hidden border-r border-slate-200 bg-white shadow-[0_12px_32px_-8px_rgba(22,23,26,0.18)] lg:flex"
           >
             {/* Header crossfades between two looks: at rest, just the
-                compact "DB" mark (text until the firm's logo is ready) —
-                hovered ("elaborated"), the exact same header the fixed
-                sidebar itself shows: full wordmark plus the pin-open icon —
-                so hovering genuinely previews what clicking to fix it open
-                gives you. */}
-            <div className="relative h-16 w-56 shrink-0 overflow-hidden border-b border-slate-100 bg-navy">
+                compact "DB" mark (text — no square/cropped mark asset for
+                this spot yet, only the full lockup) — hovered ("elaborated"),
+                the exact same header the fixed sidebar itself shows: full
+                wordmark plus the pin-open icon — so hovering genuinely
+                previews what clicking to fix it open gives you. */}
+            <div className={`relative h-16 shrink-0 overflow-hidden border-b border-slate-100 bg-navy ${ultraWide ? "w-[280px]" : "w-56"}`}>
               <AnimatePresence initial={false}>
                 {railHovered ? (
                   <motion.div
@@ -229,7 +246,7 @@ export function Sidebar({
                     transition={{ duration: 0.12 }}
                     className="absolute inset-0 flex items-center justify-between px-4"
                   >
-                    <span className="truncate text-[17px] font-extrabold tracking-tight text-white">Discipline Broking</span>
+                    <Image src="/discipline-logo-outline.png" alt="Discipline Broking" width={1199} height={407} className="h-14 w-auto shrink-0 uw:h-16!" priority />
                     <motion.button
                       type="button"
                       onClick={onToggleCollapse}
@@ -277,15 +294,15 @@ export function Sidebar({
               initial={false}
               animate={{ opacity: railHovered ? 1 : 0 }}
               transition={reduceMotion ? { duration: 0 } : { duration: 0.16 }}
-              className="w-56 whitespace-nowrap px-1 pb-1.5 pl-4 pt-3 font-mono text-[9.5px] font-semibold uppercase tracking-widest text-slate-400"
+              className={`whitespace-nowrap px-1 pb-1.5 pl-4 pt-3 font-mono text-[9.5px] font-semibold uppercase tracking-widest text-slate-400 uw:text-[12px]! ${ultraWide ? "w-[280px]" : "w-56"}`}
             >
               Modules
             </motion.p>
-            <nav className="flex w-56 flex-1 flex-col gap-1">
+            <nav className={`flex flex-1 flex-col gap-1 ${ultraWide ? "w-[280px]" : "w-56"}`}>
               {visibleItems.map(({ label, href, icon: ItemIcon, enabled }, i) => {
                 const active = enabled && pathname === href;
                 // Same type size, weight rule, and vertical rhythm as the
-                // fixed sidebar's own rows (py-[5px], text-[13px], font-
+                // fixed sidebar's own rows (py-2.5, text-[13px], font-
                 // semibold only when active) — hovering this rail is
                 // supposed to preview the fixed sidebar exactly, so a row
                 // here must never look larger or bolder than its fixed
@@ -294,7 +311,7 @@ export function Sidebar({
                 // clipped behind the icon at the 64px resting width —
                 // everything else matches.
                 const rowClassName = [
-                  "relative flex w-56 items-center gap-2.5 whitespace-nowrap py-[5px] pl-4 pr-3 text-[13px] transition-colors",
+                  `relative flex items-center gap-2.5 whitespace-nowrap py-2.5 pl-4 pr-3 text-[13px] transition-colors uw:gap-[12.5px]! uw:py-[12.5px]! uw:text-[16.25px]! ${ultraWide ? "w-[280px]" : "w-56"}`,
                   enabled
                     ? active
                       ? "font-semibold text-slate-900"
@@ -323,7 +340,7 @@ export function Sidebar({
 
                 const body = (
                   <>
-                    <ItemIcon size={16} weight={active ? "fill" : "regular"} className="relative z-10 shrink-0" />
+                    <ItemIcon size={ultraWide ? 20 : 16} weight={active ? "fill" : "regular"} className="relative z-10 shrink-0" />
                     <motion.span className="relative z-10" {...labelMotion}>
                       {label}
                     </motion.span>

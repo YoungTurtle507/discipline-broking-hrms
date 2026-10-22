@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { motion, useReducedMotion, type Variants } from "framer-motion";
 import { ShieldCheck, Lightning, UsersThree } from "@phosphor-icons/react";
 import { OrbitRing } from "./OrbitRing";
@@ -36,13 +37,7 @@ export function MarketingPanel() {
         className="relative z-10"
       >
         <motion.div variants={item} className="flex flex-col items-start gap-2.5">
-          {/* Text wordmark until the firm's logo is ready — swap this block
-              for an <Image> the same way the rest of the app does once one
-              exists. */}
-          <div className="flex flex-col leading-[1.05]">
-            <span className="text-[1.9rem] font-extrabold tracking-tight sm:text-[2.2rem]">Discipline</span>
-            <span className="text-[1.9rem] font-extrabold tracking-tight sm:text-[2.2rem]">Broking</span>
-          </div>
+          <Image src="/discipline-logo-outline.png" alt="Discipline Broking" width={1199} height={407} className="h-24 w-auto uw:h-[120px]!" priority />
           <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-300">
             People &middot; Process &middot; Progress
           </span>

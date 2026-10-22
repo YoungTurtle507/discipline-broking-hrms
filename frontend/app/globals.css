@@ -1,6 +1,22 @@
 @import "tailwindcss";
 
 @theme {
+  /* The full default breakpoint scale, restated explicitly (not just relying
+     on Tailwind's built-ins) so `--breakpoint-uw` below is guaranteed to be
+     emitted LAST in the generated stylesheet — adding a single custom
+     breakpoint without restating the rest left Tailwind free to place its
+     media block earlier than `lg`'s, so `lg:w-56` silently won the cascade
+     even past 1990px (equal specificity, source order decides). */
+  --breakpoint-sm: 40rem;
+  --breakpoint-md: 48rem;
+  --breakpoint-lg: 64rem;
+  --breakpoint-xl: 80rem;
+  --breakpoint-2xl: 96rem;
+  /* Genuinely large/ultra-wide external monitors only — deliberately well
+     above a normal ~1920px desktop screen, which must render exactly as it
+     always has. */
+  --breakpoint-uw: 1990px;
+
   --font-sans: var(--font-plex-sans), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-plex-mono), ui-monospace, "SFMono-Regular", monospace;
   /* Repurposed, not removed: every existing font-serif usage (headings, big

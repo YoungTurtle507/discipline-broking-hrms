@@ -56,7 +56,13 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
         />
         <div className="flex min-w-0 flex-1 flex-col">
           <Topbar onMenuClick={() => setSidebarOpen(true)} />
-          <main className="@container flex-1 overflow-y-auto p-4 sm:p-5 lg:p-6">{children}</main>
+          {/* Capped past ~1600px so content stays proportioned on very large
+              / ultra-wide monitors instead of stretching edge to edge —
+              below the cap (everything through desktop/laptop widths) this
+              has no effect at all. */}
+          <main className="@container flex-1 overflow-y-auto p-4 sm:p-5 lg:p-6">
+            <div className="mx-auto max-w-[1600px]">{children}</div>
+          </main>
         </div>
       </div>
     </SessionProvider>

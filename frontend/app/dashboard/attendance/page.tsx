@@ -224,7 +224,7 @@ export default function AttendancePage() {
           <p className="text-sm text-slate-400">No IN/OUT recorded for this employee today.</p>
         ) : (
           <div className="max-h-[420px] overflow-y-auto pr-1">
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
               {filteredEvents.map((ev) => (
                 <div key={ev.id} className="flex items-center gap-3 rounded-lg border border-slate-100 px-3 py-2.5">
                   <Avatar name={ev.employee_name} employeeId={ev.employee_id} size={32} />

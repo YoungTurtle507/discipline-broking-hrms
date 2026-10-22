@@ -11,6 +11,7 @@ import { AttendanceHistory } from "./_components/AttendanceHistory";
 import { DOCUMENT_SLOTS } from "../_components/DocumentsCard";
 import { formatDate } from "../../_components/my/types";
 import { DateField } from "../../_components/DateField";
+import { useSession } from "../../_components/SessionProvider";
 
 function defaultNoticeDate(): string {
   const d = new Date();
@@ -27,6 +28,8 @@ function daysRemaining(lastWorkingDay: string): number {
 
 export default function EmployeeProfilePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
+  const { can } = useSession();
+  const canManage = can("employees.manage");
   const [employee, setEmployee] = useState<Employee | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [updatingStatus, setUpdatingStatus] = useState(false);
@@ -180,23 +183,25 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
             >
               <Avatar name={employee.full_name} employeeId={employee.id} size={56} />
             </button>
-            <label
-              className="absolute -bottom-1 -right-1 flex h-6 w-6 cursor-pointer items-center justify-center rounded-full border border-white bg-brand-blue text-white hover:bg-brand-blue-dark"
-              title="Upload profile photo"
-              onClick={(e) => e.stopPropagation()}
-            >
-              {uploadingPhoto ? <CircleNotch size={12} className="animate-spin" /> : <Camera size={12} weight="fill" />}
-              <input
-                type="file"
-                accept="image/jpeg,image/png"
-                className="hidden"
-                disabled={uploadingPhoto}
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) handlePhotoSelected(file);
-                }}
-              />
-            </label>
+            {canManage && (
+              <label
+                className="absolute -bottom-1 -right-1 flex h-6 w-6 cursor-pointer items-center justify-center rounded-full border border-white bg-brand-blue text-white hover:bg-brand-blue-dark"
+                title="Upload profile photo"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {uploadingPhoto ? <CircleNotch size={12} className="animate-spin" /> : <Camera size={12} weight="fill" />}
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png"
+                  className="hidden"
+                  disabled={uploadingPhoto}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) handlePhotoSelected(file);
+                  }}
+                />
+              </label>
+            )}
           </div>
           <div>
             <h1 className="text-xl font-bold text-slate-900">{employee.full_name}</h1>
@@ -223,18 +228,20 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
               </span>
             )}
           </Link>
-          <Link
-            href={`/dashboard/employees/${employee.id}/edit`}
-            className="flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
-          >
-            <PencilSimple size={16} />
-            Edit
-          </Link>
+          {canManage && (
+            <Link
+              href={`/dashboard/employees/${employee.id}/edit`}
+              className="flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
+            >
+              <PencilSimple size={16} />
+              Edit
+            </Link>
+          )}
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-card lg:col-span-2">
+      <div className={`grid grid-cols-1 gap-6 ${canManage ? "lg:grid-cols-3" : ""}`}>
+        <div className={`rounded-xl border border-slate-200 bg-white p-5 shadow-card ${canManage ? "lg:col-span-2" : ""}`}>
           <h2 className="mb-4 text-base font-semibold text-slate-900">Details</h2>
           <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <DetailRow icon={EnvelopeSimple} label="Email" value={employee.email ?? "—"} />
@@ -280,6 +287,7 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
                   {employee.login_username ?? employee.employee_code}
                 </span>
               ) : (
+                canManage &&
                 !issuingLogin && (
                   <button
                     type="button"
@@ -296,7 +304,7 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
               )}
             </div>
 
-            {issuingLogin && !employee.user_id && (
+            {canManage && issuingLogin && !employee.user_id && (
               <form onSubmit={handleIssueLogin} className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-end">
                 <div className="flex-1 sm:max-w-xs">
                   <span className="mb-1.5 block text-xs font-semibold text-slate-600">
@@ -339,7 +347,7 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
             )}
           </div>
 
-          {employee.user_id && (
+          {canManage && employee.user_id && (
             <div className="mt-5 border-t border-slate-100 pt-5">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
@@ -369,6 +377,7 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
           )}
         </div>
 
+        {canManage && (
         <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-card">
           <h2 className="mb-4 text-base font-semibold text-slate-900">Change Status</h2>
           <div className="flex flex-col gap-2">
@@ -424,6 +433,7 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
             Employees are never deleted — only their status changes.
           </p>
         </div>
+        )}
       </div>
 
       <div className="mt-6">

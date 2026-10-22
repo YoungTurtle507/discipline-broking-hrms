@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { CircleNotch, FileText, UploadSimple } from "@phosphor-icons/react";
 import { apiFetch, apiUpload, getBackendUrl, ApiError } from "@/lib/api";
 import { formatDate } from "../../_components/my/types";
+import { useSession } from "../../_components/SessionProvider";
 
 export type DocumentType = "OFFER_LETTER" | "AADHAR_CARD" | "PAN_CARD" | "MARKSHEET";
 
@@ -21,6 +22,8 @@ type DocumentInfo = { document_type: DocumentType; uploaded_at: string };
 // the leave document upload/download pattern, just per employee instead of
 // per leave request, with three fixed slots instead of one.
 export function DocumentsCard({ employeeId }: { employeeId: number }) {
+  const { can } = useSession();
+  const canManage = can("employees.manage");
   const [docs, setDocs] = useState<Record<string, DocumentInfo> | null>(null);
   const [uploadingType, setUploadingType] = useState<DocumentType | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -94,15 +97,17 @@ export function DocumentsCard({ employeeId }: { employeeId: number }) {
                     View
                   </a>
                 )}
-                <button
-                  type="button"
-                  onClick={() => handleUploadClick(type)}
-                  disabled={uploading}
-                  className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-60"
-                >
-                  {uploading ? <CircleNotch size={13} className="animate-spin" /> : <UploadSimple size={13} weight="bold" />}
-                  {info ? "Replace" : "Upload"}
-                </button>
+                {canManage && (
+                  <button
+                    type="button"
+                    onClick={() => handleUploadClick(type)}
+                    disabled={uploading}
+                    className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-60"
+                  >
+                    {uploading ? <CircleNotch size={13} className="animate-spin" /> : <UploadSimple size={13} weight="bold" />}
+                    {info ? "Replace" : "Upload"}
+                  </button>
+                )}
               </div>
             </div>
           );

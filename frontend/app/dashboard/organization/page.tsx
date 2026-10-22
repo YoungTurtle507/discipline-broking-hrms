@@ -1,13 +1,43 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Buildings, IdentificationCard, Briefcase, Plus, PencilSimple, CheckCircle, XCircle } from "@phosphor-icons/react";
+import { Buildings, IdentificationCard, Briefcase, Plus, PencilSimple, CheckCircle, XCircle, LockSimple } from "@phosphor-icons/react";
 import { apiFetch, ApiError } from "@/lib/api";
+import { useSession } from "../_components/SessionProvider";
 import type { Department, Position, Designation } from "../employees/_components/types";
 
 type Tab = "departments" | "positions" | "designations";
 
+// The sidebar already hides this link from anyone but a Super Admin, but
+// departments/positions/designations are deliberately readable by ANY signed-in
+// user at the API level (see backend's `requireAuth`-only GET routes) — only the
+// writes are `requireRole("SUPER_ADMIN")`. Without this guard, a non-Super-Admin
+// login (e.g. the shared kiosk account) that reaches this URL directly would see
+// a page full of Add/Edit/activate controls that silently 403 the moment they're
+// used, rather than being told up front that this page isn't for them.
 export default function OrganizationPage() {
+  const { me, loading: sessionLoading } = useSession();
+  const isSuperAdmin = me?.roles.includes("SUPER_ADMIN") ?? false;
+
+  if (sessionLoading) {
+    return <p className="text-sm text-slate-400">Loading&hellip;</p>;
+  }
+  if (!isSuperAdmin) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-slate-200 bg-white py-16 text-center">
+        <LockSimple size={28} className="text-slate-300" />
+        <p className="text-sm font-semibold text-slate-700">Super Admin access required</p>
+        <p className="max-w-sm text-sm text-slate-400">
+          Organization settings (departments, positions, designations) can only be changed by a Super Admin.
+        </p>
+      </div>
+    );
+  }
+
+  return <OrganizationManager />;
+}
+
+function OrganizationManager() {
   const [tab, setTab] = useState<Tab>("departments");
   const [departments, setDepartments] = useState<Department[]>([]);
   const [positions, setPositions] = useState<Position[]>([]);

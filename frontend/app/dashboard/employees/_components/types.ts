@@ -63,6 +63,11 @@ export type Shift = {
   start_time: string;
   end_time: string;
   grace_period_minutes: number;
+  // Optional Saturday override — null means "same as the weekday value
+  // above" for that specific field.
+  saturday_start_time: string | null;
+  saturday_end_time: string | null;
+  saturday_grace_period_minutes: number | null;
   is_active: boolean;
 };
 

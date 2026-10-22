@@ -6,19 +6,19 @@ import (
 )
 
 type Config struct {
-	BackendPort    string
-	DBHost         string
-	DBPort         string
-	DBUser         string
-	DBPassword     string
-	DBName         string
+	BackendPort string
+	DBHost      string
+	DBPort      string
+	DBUser      string
+	DBPassword  string
+	DBName      string
 	// DBSSLMode is passed straight through to the Postgres DSN. Local dev
 	// Postgres has no TLS listener at all, hence "disable" by default;
 	// hosted Postgres (e.g. Neon) refuses non-TLS connections and needs
 	// this set to "require" via env.
-	DBSSLMode      string
-	RedisHost      string
-	RedisPort      string
+	DBSSLMode string
+	RedisHost string
+	RedisPort string
 	// RedisDB selects Redis's logical DB index (0-15 by default) — lets two
 	// separate projects share one native Redis instance/port with fully
 	// separate keyspaces instead of needing a second port.

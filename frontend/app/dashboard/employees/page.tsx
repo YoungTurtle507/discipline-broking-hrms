@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { MagnifyingGlass, Plus, WarningCircle, CheckCircle } from "@phosphor-icons/react";
+import { MagnifyingGlass, Plus, WarningCircle } from "@phosphor-icons/react";
 import { apiFetch, ApiError } from "@/lib/api";
 import { Avatar } from "@/components/Avatar";
 import { EmployeeStatusBadge } from "./_components/EmployeeStatusBadge";
@@ -69,7 +69,6 @@ export default function EmployeesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [departmentFilter, designationFilter, positionFilter, statusFilter]);
 
-  const unregisteredCount = (employees ?? []).filter((e) => !e.has_face_registered).length;
   const missingDocsCount = (employees ?? []).filter((e) => !e.documents_complete).length;
   const needle = search.trim().toLowerCase();
   const visibleEmployees = (employees ?? []).filter((e) => !needle || matchesSearch(e, needle));
@@ -137,19 +136,6 @@ export default function EmployeesPage() {
 
       {error && <p className="mb-3 text-sm text-error">{error}</p>}
 
-      {unregisteredCount > 0 && (
-        <div className="mb-4 flex items-center gap-2.5 rounded-xl border border-warning/30 bg-warning-bg px-4 py-3">
-          <WarningCircle size={20} className="shrink-0 text-warning" weight="bold" />
-          <p className="text-sm text-slate-700">
-            <span className="font-semibold">
-              {unregisteredCount} employee{unregisteredCount === 1 ? "" : "s"}
-            </span>{" "}
-            {unregisteredCount === 1 ? "has" : "have"} no registered face yet — they can&apos;t clock in by face scan
-            until this is done.
-          </p>
-        </div>
-      )}
-
       {missingDocsCount > 0 && (
         <div className="mb-4 flex items-center gap-2.5 rounded-xl border border-warning/30 bg-warning-bg px-4 py-3">
           <WarningCircle size={20} className="shrink-0 text-warning" weight="bold" />
@@ -174,7 +160,6 @@ export default function EmployeesPage() {
               <th className="px-4 py-3">Shift</th>
               <th className="px-4 py-3">Joined</th>
               <th className="px-4 py-3">Status</th>
-              <th className="px-4 py-3">Face ID</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -209,22 +194,6 @@ export default function EmployeesPage() {
                   <td className="px-4 py-3 text-slate-600">{formatDate(emp.joining_date)}</td>
                   <td className="px-4 py-3">
                     <EmployeeStatusBadge status={emp.status} />
-                  </td>
-                  <td className="px-4 py-3">
-                    {emp.has_face_registered ? (
-                      <span className="inline-flex items-center gap-1.5 rounded-full bg-success-bg px-2.5 py-1 text-xs font-semibold text-success">
-                        <CheckCircle size={13} weight="bold" />
-                        Registered
-                      </span>
-                    ) : (
-                      <Link
-                        href={`/dashboard/employees/${emp.id}/face`}
-                        className="inline-flex items-center gap-1.5 rounded-full bg-warning-bg px-2.5 py-1 text-xs font-semibold text-warning hover:underline"
-                      >
-                        <WarningCircle size={13} weight="bold" />
-                        Not Registered
-                      </Link>
-                    )}
                   </td>
                 </tr>
               ))

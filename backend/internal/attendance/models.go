@@ -77,12 +77,27 @@ type Event struct {
 	// ValidManualReason for which values are valid for which direction. Nil
 	// when no reason applies.
 	OutReason *string `json:"out_reason"`
+	// PhotoPath is the stamped capture photo's path relative to
+	// STORAGE_PATH (see photo.go), nil for anything without one — every
+	// PHOTO_CAPTURE event has one, MANUAL never does, and pre-migration
+	// FACE events predate the column entirely.
+	PhotoPath *string `json:"photo_path"`
 }
 
-// SourceFace, SourceManual, SourceSelf, and SourceAutoClosed mirror the
-// attendance_source enum. SourceSelf is an employee self-reporting their own
-// IN/OUT with no verification at all — only usable where remote_self_checkin
-// is enabled on that employee (see employee.Repository.SetRemoteSelfCheckin).
+// SourceFace, SourcePhotoCapture, SourceManual, SourceSelf, and
+// SourceAutoClosed mirror the attendance_source enum.
+//
+// SourceFace was the original 1:N auto-match kiosk flow (compare the camera
+// against every registered employee to find out who it is) — replaced by
+// SourcePhotoCapture: the employee is picked explicitly before the camera
+// opens, and the photo only has to pass a liveness/anti-spoof check, not
+// identify anyone. SourceFace remains only so pre-existing historical events
+// keep their recorded source.
+//
+// SourceSelf is an employee self-reporting their own IN/OUT with no
+// verification at all — only usable where remote_self_checkin is enabled on
+// that employee (see employee.Repository.SetRemoteSelfCheckin).
+//
 // SourceAutoClosed marked a synthetic OUT the system used to insert itself
 // when a day ended with no scan-out at all. The mechanism that generated
 // these (Repository.AutoCloseMissingOuts) has been removed — a day with a
@@ -91,8 +106,9 @@ type Event struct {
 // The constant remains only so any already-inserted synthetic events from
 // before the removal keep being recognised as such.
 const (
-	SourceFace       = "FACE"
-	SourceManual     = "MANUAL"
-	SourceSelf       = "SELF"
-	SourceAutoClosed = "AUTO_CLOSED"
+	SourceFace         = "FACE"
+	SourcePhotoCapture = "PHOTO_CAPTURE"
+	SourceManual       = "MANUAL"
+	SourceSelf         = "SELF"
+	SourceAutoClosed   = "AUTO_CLOSED"
 )

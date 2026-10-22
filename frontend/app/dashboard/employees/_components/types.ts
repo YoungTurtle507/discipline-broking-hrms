@@ -41,9 +41,6 @@ export type Employee = {
   login_username?: string | null;
   created_at: string;
   updated_at: string;
-  // True once at least one active face sample is registered — the minimum
-  // needed for this employee to clock in via face scan at all.
-  has_face_registered: boolean;
   // Lets this specific employee mark their own attendance from their own
   // dashboard with no face verification — for someone with no camera to scan
   // against (e.g. working from home). A per-employee flag, not a role-wide one.
@@ -79,33 +76,6 @@ export type Designation = {
 };
 export type Position = { id: number; title: string; description: string; is_active: boolean };
 
-export type FaceSampleType = "FRONT" | "LEFT" | "RIGHT" | "LIGHTING" | "ADDITIONAL";
-
-export const FACE_SAMPLES: { type: FaceSampleType; label: string; instructions: string; required: boolean }[] = [
-  { type: "FRONT", label: "Front-Facing", instructions: "Look straight at the camera, neutral expression.", required: true },
-  { type: "LEFT", label: "Left Angle", instructions: "Turn your head to show the left side of your face.", required: false },
-  { type: "RIGHT", label: "Right Angle", instructions: "Turn your head to show the right side of your face.", required: false },
-  { type: "LIGHTING", label: "Different Lighting", instructions: "Move to a brighter or dimmer spot, face forward.", required: false },
-];
-
-export type FaceSample = {
-  id: number;
-  employee_id: number;
-  sample_type: FaceSampleType;
-  model_name: string;
-  model_version: string;
-  quality_score: number;
-  is_active: boolean;
-  registered_by: number | null;
-  created_at: string;
-};
-
-export type FaceVerifyResult = {
-  matched: boolean;
-  confidence: number;
-  threshold: number;
-};
-
 export type AttendanceDirection = "IN" | "OUT";
 
 // LATE_COMING is only ever set via a manual correction on an IN — never by
@@ -126,6 +96,10 @@ export type AttendanceEvent = {
   // why the employee is going out.
   out_reason?: OutReason | null;
   note?: string;
+  // Path to the stamped capture photo for this event, null for anything
+  // without one (a MANUAL correction, or an event from before this existed).
+  // Serve via GET /api/v1/attendance/events/:id/photo, not read directly.
+  photo_path?: string | null;
 };
 
 export type EventLabel = "Office In" | "Office Out" | "Lunch In" | "Lunch Out" | "Personal In" | "Personal Out";

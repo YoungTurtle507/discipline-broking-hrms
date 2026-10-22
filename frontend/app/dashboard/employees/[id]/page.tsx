@@ -2,7 +2,7 @@
 
 import { use, useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, PencilSimple, EnvelopeSimple, Phone, Calendar, Buildings, IdentificationCard, Clock, HourglassMedium, ScanSmiley, Key, CircleNotch, FileText, MapPin, Camera, X } from "@phosphor-icons/react";
+import { ArrowLeft, PencilSimple, EnvelopeSimple, Phone, Calendar, Buildings, IdentificationCard, Clock, HourglassMedium, Key, CircleNotch, FileText, MapPin, Camera, X } from "@phosphor-icons/react";
 import { apiFetch, apiUpload, getBackendUrl, ApiError } from "@/lib/api";
 import { Avatar } from "@/components/Avatar";
 import { EmployeeStatusBadge } from "../_components/EmployeeStatusBadge";
@@ -208,13 +208,6 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
         </div>
         <div className="flex items-center gap-3">
           <EmployeeStatusBadge status={employee.status} />
-          <Link
-            href={`/dashboard/employees/${employee.id}/face`}
-            className="flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
-          >
-            <ScanSmiley size={16} />
-            Face ID
-          </Link>
           <Link
             href={`/dashboard/employees/${employee.id}/documents`}
             className="relative flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"

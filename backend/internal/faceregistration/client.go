@@ -10,7 +10,9 @@ import (
 	"time"
 )
 
-// Client talks to the Python face service for embedding generation.
+// Client talks to the Python face service for the live-capture check
+// (detection + liveness + anti-spoofing). It no longer performs face
+// matching — see CaptureResult.
 type Client struct {
 	baseURL string
 	http    *http.Client
@@ -21,7 +23,8 @@ func NewClient(baseURL string) *Client {
 }
 
 // ErrFaceService wraps a rejection from the face service (bad image, no
-// face, low confidence, etc.) so handlers can surface the real reason.
+// face, liveness/anti-spoof failure, etc.) so handlers can surface the real
+// reason.
 type ErrFaceService struct {
 	StatusCode int
 	Message    string
@@ -29,7 +32,10 @@ type ErrFaceService struct {
 
 func (e *ErrFaceService) Error() string { return e.Message }
 
-func (c *Client) Embed(imageBytes []byte, filename string) (*EmbeddingResult, error) {
+// VerifyCapture submits a photo for the live-capture check — confirms
+// exactly one real, live face is present. It does not identify who that is;
+// the caller already knows (the employee is picked before the camera opens).
+func (c *Client) VerifyCapture(imageBytes []byte, filename string) (*CaptureResult, error) {
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
 	part, err := writer.CreateFormFile("file", filename)
@@ -43,7 +49,7 @@ func (c *Client) Embed(imageBytes []byte, filename string) (*EmbeddingResult, er
 		return nil, err
 	}
 
-	req, err := http.NewRequest(http.MethodPost, c.baseURL+"/embed", &body)
+	req, err := http.NewRequest(http.MethodPost, c.baseURL+"/verify-capture", &body)
 	if err != nil {
 		return nil, err
 	}
@@ -72,7 +78,7 @@ func (c *Client) Embed(imageBytes []byte, filename string) (*EmbeddingResult, er
 		return nil, &ErrFaceService{StatusCode: resp.StatusCode, Message: msg}
 	}
 
-	var result EmbeddingResult
+	var result CaptureResult
 	if err := json.Unmarshal(respBody, &result); err != nil {
 		return nil, err
 	}

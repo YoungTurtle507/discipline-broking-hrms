@@ -60,9 +60,8 @@ func main() {
 	empHandlers := employee.NewHandlers(empRepo)
 	empDocHandlers := employee.NewDocumentHandlers(empRepo, cfg.StoragePath)
 
-	faceRepo := faceregistration.NewRepository(db)
 	faceClient := faceregistration.NewClient(cfg.FaceServiceURL)
-	faceHandlers := faceregistration.NewHandlers(faceRepo, faceClient, cfg.StoragePath)
+	faceHandlers := faceregistration.NewHandlers(cfg.StoragePath)
 
 	calcRepo := calculation.NewRepository(db)
 	calcHandlers := calculation.NewHandlers(calcRepo)
@@ -80,7 +79,7 @@ func main() {
 	orgHandlers := organization.NewHandlers(orgRepo, calcRepo)
 
 	attendanceRepo := attendance.NewRepository(db)
-	attendanceHandlers := attendance.NewHandlers(attendanceRepo, faceRepo, faceClient, authRepo, calcRepo)
+	attendanceHandlers := attendance.NewHandlers(attendanceRepo, faceClient, authRepo, calcRepo, cfg.StoragePath)
 
 	// The dashboard reports through the engine rather than querying raw events,
 	// so its numbers can't drift from what the shared attendance screen shows.
@@ -149,15 +148,7 @@ func main() {
 		employees.POST("/:id/documents/:type", requireEmployeesManage, empDocHandlers.UploadDocument)
 		employees.GET("/:id/documents/:type", empDocHandlers.DownloadDocument)
 
-		// Face registration is reachable by either permission — the shared
-		// kiosk login needs to register faces without being able to edit the
-		// employee record itself.
-		requireFaceReg := auth.RequireAnyPermission("employees.manage", "employees.view")
 		employees.POST("/:id/photo", requireEmployeesManage, faceHandlers.UploadPhoto)
-		employees.POST("/:id/face-samples", requireFaceReg, faceHandlers.Register)
-		employees.GET("/:id/face-samples", requireFaceReg, faceHandlers.List)
-		employees.PATCH("/:id/face-samples/:sampleType/deactivate", requireFaceReg, faceHandlers.Deactivate)
-		employees.POST("/:id/face-verify", requireFaceReg, faceHandlers.Verify)
 
 		// Deliberately outside the employees-gated group above: an avatar
 		// photo shows up in views that aren't all restricted to that
@@ -166,11 +157,11 @@ func main() {
 
 		requireAttendance := auth.RequirePermission("attendance.manage")
 		attendanceGroup := api.Group("/attendance", requireAuth, requireAttendance)
+		// The kiosk's "Mark Attendance" action: employee picked first, then
+		// a live-capture photo confirms a real person, not an auto-match.
 		attendanceGroup.POST("", attendanceHandlers.Mark)
-		// MarkAuto is the walk-up, no-employee-selected 1:N face scan — the
-		// shared kiosk's actual "mark attendance" action.
-		attendanceGroup.POST("/auto", attendanceHandlers.MarkAuto)
 		attendanceGroup.GET("/today", attendanceHandlers.ListToday)
+		attendanceGroup.GET("/events/:id/photo", attendanceHandlers.GetPhoto)
 		attendanceGroup.POST("/manual", attendanceHandlers.RecordManual)
 		attendanceGroup.GET("/events", attendanceHandlers.ListForEmployeeOn)
 		attendanceGroup.GET("/history", calcHandlers.GetHistory)

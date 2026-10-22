@@ -20,18 +20,19 @@ func NewRepository(db *pgxpool.Pool) *Repository {
 }
 
 // note is the free-text detail alongside outReason (e.g. "Lunch" or
-// "Doctor's appointment") — blank unless outReason is set. event_time is set
-// explicitly from clock.Now() rather than left to the column's own DEFAULT
-// now(), so a face-scanned event's timestamp runs through the same clock
-// every other attendance-relevant time does.
-func (r *Repository) Create(ctx context.Context, employeeID int64, direction string, confidence float64, modelName, modelVersion string, verifiedBy *int64, outReason *string, note string) (*Event, error) {
+// "Doctor's appointment") — blank unless outReason is set. eventTime is
+// supplied by the caller (rather than defaulted to clock.Now() here) so it
+// can be the exact same instant already burned into the capture photo's
+// stamp — see photo.go. photoPath is the stamped capture photo's path
+// relative to STORAGE_PATH, empty for a source with no photo.
+func (r *Repository) Create(ctx context.Context, employeeID int64, direction string, eventTime time.Time, confidence float64, modelName, modelVersion string, verifiedBy *int64, outReason *string, note, photoPath string) (*Event, error) {
 	var e Event
 	err := r.db.QueryRow(ctx,
-		`INSERT INTO attendance_events (employee_id, direction, event_time, confidence, model_name, model_version, verified_by, out_reason, note)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-		 RETURNING id, employee_id, direction, event_time, confidence, model_name, model_version, verified_by, source, note, out_reason`,
-		employeeID, direction, clock.Now(), confidence, modelName, modelVersion, verifiedBy, outReason, note,
-	).Scan(&e.ID, &e.EmployeeID, &e.Direction, &e.EventTime, &e.Confidence, &e.ModelName, &e.ModelVersion, &e.VerifiedBy, &e.Source, &e.Note, &e.OutReason)
+		`INSERT INTO attendance_events (employee_id, direction, event_time, confidence, model_name, model_version, verified_by, source, out_reason, note, photo_path)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		 RETURNING id, employee_id, direction, event_time, confidence, model_name, model_version, verified_by, source, note, out_reason, photo_path`,
+		employeeID, direction, eventTime, confidence, modelName, modelVersion, verifiedBy, SourcePhotoCapture, outReason, note, photoPath,
+	).Scan(&e.ID, &e.EmployeeID, &e.Direction, &e.EventTime, &e.Confidence, &e.ModelName, &e.ModelVersion, &e.VerifiedBy, &e.Source, &e.Note, &e.OutReason, &e.PhotoPath)
 	if err != nil {
 		return nil, err
 	}
@@ -41,6 +42,14 @@ func (r *Repository) Create(ctx context.Context, employeeID int64, direction str
 		return nil, err
 	}
 	return &e, nil
+}
+
+// PhotoPath looks up one event's stamped capture photo path (nil if it has
+// none) — used to serve it back without loading the whole Event.
+func (r *Repository) PhotoPath(ctx context.Context, eventID int64) (*string, error) {
+	var path *string
+	err := r.db.QueryRow(ctx, `SELECT photo_path FROM attendance_events WHERE id = $1`, eventID).Scan(&path)
+	return path, err
 }
 
 // LogAttempt records every verification attempt during attendance marking —
@@ -86,7 +95,7 @@ func (r *Repository) NextDirection(ctx context.Context, employeeID int64) (strin
 // direction (their last event today).
 func (r *Repository) ListToday(ctx context.Context) ([]Event, error) {
 	rows, err := r.db.Query(ctx,
-		`SELECT ae.id, ae.employee_id, e.full_name, ae.direction, ae.event_time, ae.confidence, ae.model_name, ae.model_version, ae.verified_by, ae.out_reason, ae.note
+		`SELECT ae.id, ae.employee_id, e.full_name, ae.direction, ae.event_time, ae.confidence, ae.model_name, ae.model_version, ae.verified_by, ae.out_reason, ae.note, ae.photo_path
 		 FROM attendance_events ae
 		 JOIN employees e ON e.id = ae.employee_id
 		 WHERE ae.event_time::date = $1::date
@@ -101,7 +110,7 @@ func (r *Repository) ListToday(ctx context.Context) ([]Event, error) {
 	var out []Event
 	for rows.Next() {
 		var e Event
-		if err := rows.Scan(&e.ID, &e.EmployeeID, &e.EmployeeName, &e.Direction, &e.EventTime, &e.Confidence, &e.ModelName, &e.ModelVersion, &e.VerifiedBy, &e.OutReason, &e.Note); err != nil {
+		if err := rows.Scan(&e.ID, &e.EmployeeID, &e.EmployeeName, &e.Direction, &e.EventTime, &e.Confidence, &e.ModelName, &e.ModelVersion, &e.VerifiedBy, &e.OutReason, &e.Note, &e.PhotoPath); err != nil {
 			return nil, err
 		}
 		out = append(out, e)

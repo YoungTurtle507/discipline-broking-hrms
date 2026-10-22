@@ -20,9 +20,8 @@ import (
 )
 
 type Handlers struct {
-	repo     *Repository
-	faceRepo *faceregistration.Repository
-	client   *faceregistration.Client
+	repo   *Repository
+	client *faceregistration.Client
 	// authRepo backs the password confirmation on a manual entry (see
 	// RecordManual) — a Super Admin skips it, anyone else must re-enter their
 	// own login password.
@@ -32,10 +31,12 @@ type Handlers struct {
 	// calculation engine itself uses, so the kiosk's reason prompt and the
 	// engine's own rules can never disagree about when a day is "over".
 	calc *calculation.Repository
+	// storagePath is where a capture's stamped photo is written — see photo.go.
+	storagePath string
 }
 
-func NewHandlers(repo *Repository, faceRepo *faceregistration.Repository, client *faceregistration.Client, authRepo *auth.Repository, calc *calculation.Repository) *Handlers {
-	return &Handlers{repo: repo, faceRepo: faceRepo, client: client, authRepo: authRepo, calc: calc}
+func NewHandlers(repo *Repository, client *faceregistration.Client, authRepo *auth.Repository, calc *calculation.Repository, storagePath string) *Handlers {
+	return &Handlers{repo: repo, client: client, authRepo: authRepo, calc: calc, storagePath: storagePath}
 }
 
 // recalculateDay persists the engine's result for employeeID's date right
@@ -137,8 +138,12 @@ func tooSoonResponse(employeeID int64) gin.H {
 	}
 }
 
-func (h *Handlers) embed(c *gin.Context, imageBytes []byte, filename string) (*faceregistration.EmbeddingResult, bool) {
-	result, err := h.client.Embed(imageBytes, filename)
+// checkLiveCapture submits the photo to the face service for the
+// live-capture check (one real, live face present — see
+// faceregistration.Client.VerifyCapture) and writes the right error response
+// itself on rejection, same shape as the old embed() helper.
+func (h *Handlers) checkLiveCapture(c *gin.Context, imageBytes []byte, filename string) (*faceregistration.CaptureResult, bool) {
+	result, err := h.client.VerifyCapture(imageBytes, filename)
 	if err != nil {
 		var faceErr *faceregistration.ErrFaceService
 		if errors.As(err, &faceErr) {
@@ -151,11 +156,15 @@ func (h *Handlers) embed(c *gin.Context, imageBytes []byte, filename string) (*f
 	return result, true
 }
 
-// Mark is the "employee already selected, scan to confirm" flow: it verifies
-// the freshly captured photo against that one employee's registered samples
-// and only creates an event if it matches. Direction is always computed
-// server-side from today's events — never taken from the request — so it's
-// impossible to record two INs in a row no matter what the client sends.
+// Mark is attendance marking's one entry point: the employee is picked
+// explicitly (by whoever's operating the kiosk) before the camera opens, so
+// this never has to figure out who's in frame — only whether the photo shows
+// one real, live person. Direction is always computed server-side from
+// today's events — never taken from the request — so it's impossible to
+// record two INs in a row no matter what the client sends. The accepted
+// photo is stamped with date/direction/time and stored against the event it
+// creates, so there's a visual record of exactly when and for whom it was
+// taken.
 func (h *Handlers) Mark(c *gin.Context) {
 	employeeID, err := strconv.ParseInt(c.PostForm("employee_id"), 10, 64)
 	if err != nil {
@@ -199,138 +208,33 @@ func (h *Handlers) Mark(c *gin.Context) {
 		}
 	}
 
-	result, ok := h.embed(c, imageBytes, filename)
+	result, ok := h.checkLiveCapture(c, imageBytes, filename)
 	if !ok {
 		_ = h.repo.LogAttempt(ctx, employeeID, direction, false, 0, "face service rejected image", attemptedBy)
 		return
 	}
 
-	stored, err := h.faceRepo.ActiveEmbeddings(ctx, employeeID)
+	eventTime := clock.Now()
+	stamped, err := stampPhoto(imageBytes, direction, eventTime)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load face registrations"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to process captured photo"})
 		return
 	}
-	if len(stored) == 0 {
-		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "employee has no registered face samples"})
-		return
-	}
-
-	var best float64
-	for _, emb := range stored {
-		if sim := faceregistration.CosineSimilarity(result.Embedding, emb); sim > best {
-			best = sim
-		}
-	}
-
-	if best < faceregistration.MatchThreshold {
-		_ = h.repo.LogAttempt(ctx, employeeID, direction, false, best, "confidence below threshold", attemptedBy)
-		c.JSON(http.StatusUnprocessableEntity, gin.H{
-			"error":      "face did not match this employee's registration",
-			"confidence": best,
-			"threshold":  faceregistration.MatchThreshold,
-		})
+	photoRelPath := attendancePhotoPath(employeeID, eventTime)
+	if err := saveAttendancePhoto(h.storagePath, photoRelPath, stamped); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to save captured photo"})
 		return
 	}
 
-	_ = h.repo.LogAttempt(ctx, employeeID, direction, true, best, "", attemptedBy)
+	_ = h.repo.LogAttempt(ctx, employeeID, direction, true, result.LivenessScore, "", attemptedBy)
 
-	event, err := h.repo.Create(ctx, employeeID, direction, best, result.ModelName, result.ModelVersion, attemptedBy, outReason, note)
+	event, err := h.repo.Create(ctx, employeeID, direction, eventTime, result.LivenessScore, result.ModelName, result.ModelVersion, attemptedBy, outReason, note, photoRelPath)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to record attendance event"})
 		return
 	}
-	today := clock.Now().Format("2006-01-02")
+	today := eventTime.Format("2006-01-02")
 	h.recalculateDay(ctx, employeeID, today)
-	c.JSON(http.StatusCreated, event)
-}
-
-// MarkAuto is the "no employee selected" kiosk flow: it identifies who's in
-// frame by comparing against every currently-employed person's registered
-// samples (1:N), then records whatever direction is next for whoever it
-// finds — no manual employee pick, no manual IN/OUT choice.
-func (h *Handlers) MarkAuto(c *gin.Context) {
-	imageBytes, filename, err := readUploadedImage(c)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "image file is required"})
-		return
-	}
-
-	attemptedBy := attemptedByFrom(c)
-	ctx := c.Request.Context()
-
-	result, ok := h.embed(c, imageBytes, filename)
-	if !ok {
-		return
-	}
-
-	allEmbeddings, err := h.faceRepo.AllActiveEmbeddings(ctx)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load face registrations"})
-		return
-	}
-
-	var bestEmployeeID int64
-	var best float64
-	for employeeID, embeddings := range allEmbeddings {
-		for _, emb := range embeddings {
-			if sim := faceregistration.CosineSimilarity(result.Embedding, emb); sim > best {
-				best = sim
-				bestEmployeeID = employeeID
-			}
-		}
-	}
-
-	if best < faceregistration.MatchThreshold {
-		slog.Warn("auto attendance scan did not match anyone",
-			"best_confidence", best,
-			"threshold", faceregistration.MatchThreshold,
-			"closest_candidate_employee_id", bestEmployeeID,
-			"candidates_checked", len(allEmbeddings),
-		)
-		c.JSON(http.StatusUnprocessableEntity, gin.H{
-			"error":      "face not recognized",
-			"confidence": best,
-			"threshold":  faceregistration.MatchThreshold,
-		})
-		return
-	}
-
-	direction, lastEventTime, err := h.repo.NextDirection(ctx, bestEmployeeID)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to determine next attendance direction"})
-		return
-	}
-	if tooSoonToMarkOut(direction, lastEventTime) {
-		c.JSON(http.StatusUnprocessableEntity, tooSoonResponse(bestEmployeeID))
-		return
-	}
-
-	outReason, note, err := parseOutReason(c)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	if outReason == nil {
-		needsReason, err := h.needsOutReason(ctx, direction, bestEmployeeID)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to check shift timing"})
-			return
-		}
-		if needsReason {
-			c.JSON(http.StatusUnprocessableEntity, reasonRequiredResponse(bestEmployeeID))
-			return
-		}
-	}
-
-	_ = h.repo.LogAttempt(ctx, bestEmployeeID, direction, true, best, "", attemptedBy)
-
-	event, err := h.repo.Create(ctx, bestEmployeeID, direction, best, result.ModelName, result.ModelVersion, attemptedBy, outReason, note)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to record attendance event"})
-		return
-	}
-	today := clock.Now().Format("2006-01-02")
-	h.recalculateDay(ctx, bestEmployeeID, today)
 	c.JSON(http.StatusCreated, event)
 }
 

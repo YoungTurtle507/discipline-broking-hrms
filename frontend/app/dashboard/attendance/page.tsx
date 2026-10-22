@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
   ArrowLeft,
+  Camera,
   CheckCircle,
   ClockCounterClockwise,
   LockKey,
@@ -39,8 +40,6 @@ const NOTE_REQUIRED_REASONS = new Set<OutReason>(["HALF_DAY", "EARLY_LEAVE", "PE
 const MANUAL_IN_REASONS: OutReason[] = ["LATE_COMING", "HALF_DAY", "LUNCH", "PERSONAL"];
 const MANUAL_OUT_REASONS: OutReason[] = ["EARLY_LEAVE", "HALF_DAY", "LUNCH", "PERSONAL"];
 
-const SCAN_INTERVAL_MS = 1500;
-
 // A <input type="datetime-local"> reads its value as local wall-clock time,
 // so building this from toISOString() (which converts to UTC first) would
 // silently cap the picker several hours into the past in any timezone ahead
@@ -61,7 +60,7 @@ export default function AttendancePage() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [todayEvents, setTodayEvents] = useState<AttendanceEvent[]>([]);
   const [snapshot, setSnapshot] = useState<TodaySnapshot | null>(null);
-  const [autoOpen, setAutoOpen] = useState(false);
+  const [markOpen, setMarkOpen] = useState(false);
   const [manualOpen, setManualOpen] = useState(false);
   const [employeeFilter, setEmployeeFilter] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -82,7 +81,7 @@ export default function AttendancePage() {
 
   useEffect(() => {
     if (new URLSearchParams(window.location.search).get("auto") === "1") {
-      setAutoOpen(true);
+      setMarkOpen(true);
     }
     apiFetch<{ employees: Employee[] | null }>("/api/v1/employees")
       .then((d) => setEmployees(d.employees ?? []))
@@ -117,11 +116,11 @@ export default function AttendancePage() {
           </button>
           <button
             type="button"
-            onClick={() => setAutoOpen(true)}
+            onClick={() => setMarkOpen(true)}
             className="flex items-center gap-2 rounded-lg bg-brand-blue px-4 py-2.5 text-sm font-semibold text-white hover:bg-brand-blue-dark"
           >
             <ScanSmiley size={16} />
-            Add Attendance
+            Mark Attendance
           </button>
         </div>
       </div>
@@ -218,11 +217,11 @@ export default function AttendancePage() {
         )}
       </div>
 
-      {autoOpen && (
-        <AutoScanModal
+      {markOpen && (
+        <MarkAttendanceModal
           employees={employees}
           todayEvents={todayEvents}
-          onClose={() => setAutoOpen(false)}
+          onClose={() => setMarkOpen(false)}
           onRecorded={() => loadToday()}
         />
       )}
@@ -241,16 +240,17 @@ export default function AttendancePage() {
   );
 }
 
-// Held between "the backend asked why" and "the person answered" — the same
-// captured photo is resubmitted with the reason attached, so nobody has to
-// scan twice.
-type PendingReason = { employeeId: number; blob: Blob };
+// Held once the backend asks why someone's going out — the same captured
+// photo is resubmitted with the reason attached, so nobody has to capture
+// twice.
+type PendingReason = { blob: Blob };
 
-// The kiosk-style flow: no employee is picked ahead of time. Every frame is
-// checked against everyone currently employed (1:N), and the moment someone
-// is recognized, their next direction is recorded automatically. Marking OUT
-// before their own shift ends pauses here to ask why before finishing.
-function AutoScanModal({
+// "Mark Attendance": the employee is picked first (step "pick"), then a
+// camera screen appears for a single manual capture (step "capture") — no
+// auto-detection, no 1:N face match. The captured photo only has to show one
+// real, live person; the backend stamps it with date/direction/time and
+// stores it against the event it creates.
+function MarkAttendanceModal({
   employees,
   todayEvents,
   onClose,
@@ -261,179 +261,205 @@ function AutoScanModal({
   onClose: () => void;
   onRecorded: () => void;
 }) {
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const cameraError = useCameraStream(videoRef);
-  const checkingRef = useRef(false);
-  const [scanError, setScanError] = useState<string | null>(null);
-  const [result, setResult] = useState<AttendanceEvent | null>(null);
-  const [liveStatus, setLiveStatus] = useState<string | null>(null);
-  const [pending, setPending] = useState<PendingReason | null>(null);
-
-  useEffect(() => {
-    if (cameraError || result || pending) return;
-
-    const interval = setInterval(async () => {
-      if (checkingRef.current) return;
-      checkingRef.current = true;
-      const blob = await captureFrameBlob(videoRef.current, canvasRef.current);
-      if (!blob) {
-        checkingRef.current = false;
-        return;
-      }
-      try {
-        const formData = new FormData();
-        formData.append("file", blob, "scan.jpg");
-        const event = await apiUpload<AttendanceEvent>("/api/v1/attendance/auto", formData);
-        setScanError(null);
-        setLiveStatus(null);
-        setResult(event);
-        onRecorded();
-      } catch (err) {
-        // The same photo that was already matched is held onto and
-        // resubmitted with the reason once the person answers, rather than
-        // capturing a fresh (possibly empty) frame.
-        if (err instanceof ApiError && err.body?.reason_required && typeof err.body.employee_id === "number") {
-          setPending({ employeeId: err.body.employee_id, blob });
-          return;
-        }
-        // 422 covers "no face yet" and "not recognized" — both expected
-        // while someone's getting into frame, so surface what the backend
-        // actually saw instead of a static placeholder (e.g. "no face
-        // detected" vs. "face not recognized" mean very different things).
-        if (err instanceof ApiError) {
-          if (err.status === 422) {
-            setLiveStatus(err.message);
-          } else {
-            setScanError(err.message);
-          }
-        }
-      } finally {
-        checkingRef.current = false;
-      }
-    }, SCAN_INTERVAL_MS);
-
-    return () => clearInterval(interval);
-  }, [cameraError, result, pending, onRecorded]);
-
-  async function submitWithReason(reason: OutReason, note: string, documentFile?: File) {
-    if (!pending) return;
-    try {
-      const formData = new FormData();
-      formData.append("file", pending.blob, "scan.jpg");
-      formData.append("reason", reason);
-      if (note) formData.append("note", note);
-      if (documentFile) formData.append("document", documentFile);
-      const event = await apiUpload<AttendanceEvent>("/api/v1/attendance/auto", formData);
-      setPending(null);
-      setScanError(null);
-      setResult(event);
-      onRecorded();
-    } catch (err) {
-      setPending(null);
-      setScanError(err instanceof ApiError ? err.message : "Failed to record attendance");
-    }
-  }
-
-  const pendingEmployee = pending ? employees.find((e) => e.id === pending.employeeId) : null;
+  const [step, setStep] = useState<"pick" | "capture">("pick");
+  const [employee, setEmployee] = useState<Employee | null>(null);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4">
       <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-base font-semibold text-slate-900">
-            {pending ? "Why are you going out?" : "Add Attendance"}
+            {step === "pick" ? "Mark Attendance" : employee?.full_name}
           </h2>
           <button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-600">
             <X size={20} />
           </button>
         </div>
 
-        {/* The camera preview stays mounted for the whole life of this modal,
-            pending or not — useCameraStream only ever binds the stream to
-            the <video> element once, on this component's first mount, so
-            conditionally unmounting it (e.g. swapping it out for the reason
-            prompt) would leave a freshly-remounted <video> with no stream
-            attached: a black box with no error, since the camera permission
-            was already granted and the stream is still technically alive,
-            just not attached to anything. Hidden with a CSS class instead
-            while the reason prompt is up, never removed from the DOM. */}
-        <div className={pending ? "hidden" : undefined}>
-          <div className="relative aspect-square w-full overflow-hidden rounded-lg bg-slate-900">
-            {cameraError && (
-              <div className="absolute inset-0 z-10 flex items-center justify-center bg-slate-900 p-4 text-center text-sm text-slate-300">
-                <WarningCircle size={18} className="mr-2 shrink-0" />
-                {cameraError}
-              </div>
-            )}
-            <video ref={videoRef} autoPlay playsInline muted className="h-full w-full object-cover" />
-
-            {result && (
-              <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-slate-900/85 text-center">
-                {result.direction === "IN" ? (
-                  <SignIn size={48} weight="bold" className="text-success" />
-                ) : (
-                  <SignOut size={48} weight="bold" className="text-warning" />
-                )}
-                <p className="text-lg font-bold text-white">{result.employee_name}</p>
-                <p className="text-sm font-medium text-slate-300">
-                  {labelAttendanceEvents([...todayEvents, result]).get(result.id) ?? result.direction} Recorded
-                  {result.out_reason ? ` (${OUT_REASON_LABEL[result.out_reason]})` : ""} &middot;{" "}
-                  {new Date(result.event_time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                </p>
-              </div>
-            )}
-
-            {!result && !cameraError && (
-              <div className="absolute bottom-3 left-0 right-0 flex justify-center">
-                <span className="flex items-center gap-2 rounded-full bg-slate-900/70 px-3 py-1.5 text-xs font-medium text-white">
-                  <span className="h-2 w-2 animate-pulse rounded-full bg-brand-blue" />
-                  {liveStatus ?? "Looking for a face…"}
-                </span>
-              </div>
-            )}
-          </div>
-        </div>
-        <canvas ref={canvasRef} className="hidden" />
-
-        {pending ? (
-          <OutReasonPrompt employeeName={pendingEmployee?.full_name} onSubmit={submitWithReason} onCancel={() => setPending(null)} />
-        ) : (
+        {step === "pick" ? (
           <>
-            {scanError && <p className="mt-3 text-center text-sm text-error">{scanError}</p>}
-
-            <div className="mt-4 flex gap-2">
-              {result ? (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => setResult(null)}
-                    className="flex-1 rounded-lg bg-brand-blue px-4 py-2.5 text-sm font-semibold text-white hover:bg-brand-blue-dark"
-                  >
-                    Scan Next Person
-                  </button>
-                  <button
-                    type="button"
-                    onClick={onClose}
-                    className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-50"
-                  >
-                    Done
-                  </button>
-                </>
-              ) : (
-                <button
-                  type="button"
-                  onClick={onClose}
-                  className="flex-1 rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-50"
-                >
-                  Cancel
-                </button>
-              )}
-            </div>
+            <p className="mb-3 text-sm text-slate-500">Select your name to continue.</p>
+            <EmployeeSearchPicker
+              employees={employees}
+              selected={null}
+              onSelect={(emp) => {
+                if (!emp) return;
+                setEmployee(emp);
+                setStep("capture");
+              }}
+              placeholder="Search your name…"
+              autoFocus
+            />
+            <button
+              type="button"
+              onClick={onClose}
+              className="mt-4 w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-50"
+            >
+              Cancel
+            </button>
           </>
+        ) : (
+          <CaptureScreen
+            employee={employee!}
+            todayEvents={todayEvents}
+            onBack={() => setStep("pick")}
+            onClose={onClose}
+            onRecorded={onRecorded}
+          />
         )}
       </div>
     </div>
+  );
+}
+
+// The camera step for one already-chosen employee: live preview, a manual
+// Capture button (no auto-polling — a capture only happens when clicked),
+// then either a result or (marking OUT before shift end) the reason prompt.
+function CaptureScreen({
+  employee,
+  todayEvents,
+  onBack,
+  onClose,
+  onRecorded,
+}: {
+  employee: Employee;
+  todayEvents: AttendanceEvent[];
+  onBack: () => void;
+  onClose: () => void;
+  onRecorded: () => void;
+}) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const cameraError = useCameraStream(videoRef);
+  const [submitting, setSubmitting] = useState(false);
+  const [scanError, setScanError] = useState<string | null>(null);
+  const [result, setResult] = useState<AttendanceEvent | null>(null);
+  const [pending, setPending] = useState<PendingReason | null>(null);
+
+  async function submit(blob: Blob, reason?: OutReason, note?: string, documentFile?: File) {
+    setSubmitting(true);
+    try {
+      const formData = new FormData();
+      formData.append("employee_id", String(employee.id));
+      formData.append("file", blob, "capture.jpg");
+      if (reason) formData.append("reason", reason);
+      if (note) formData.append("note", note);
+      if (documentFile) formData.append("document", documentFile);
+      const event = await apiUpload<AttendanceEvent>("/api/v1/attendance", formData);
+      setPending(null);
+      setScanError(null);
+      setResult(event);
+      onRecorded();
+    } catch (err) {
+      // The same photo already submitted is held onto and resubmitted with
+      // the reason once the person answers, rather than capturing a fresh one.
+      if (!reason && err instanceof ApiError && err.body?.reason_required) {
+        setPending({ blob });
+        return;
+      }
+      setPending(null);
+      setScanError(err instanceof ApiError ? err.message : "Failed to record attendance");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleCapture() {
+    const blob = await captureFrameBlob(videoRef.current, canvasRef.current);
+    if (!blob) return;
+    await submit(blob);
+  }
+
+  function submitWithReason(reason: OutReason, note: string, documentFile?: File) {
+    if (!pending) return;
+    void submit(pending.blob, reason, note, documentFile);
+  }
+
+  return (
+    <>
+      {/* The camera preview stays mounted for this whole step, pending or
+          not — useCameraStream only ever binds the stream to the <video>
+          element once, on first mount, so conditionally unmounting it (e.g.
+          swapping it out for the reason prompt) would leave a freshly
+          remounted <video> with no stream attached. Hidden with a CSS class
+          instead while the reason prompt is up, never removed from the DOM. */}
+      <div className={pending ? "hidden" : undefined}>
+        <div className="relative aspect-square w-full overflow-hidden rounded-lg bg-slate-900">
+          {cameraError && (
+            <div className="absolute inset-0 z-10 flex items-center justify-center bg-slate-900 p-4 text-center text-sm text-slate-300">
+              <WarningCircle size={18} className="mr-2 shrink-0" />
+              {cameraError}
+            </div>
+          )}
+          <video ref={videoRef} autoPlay playsInline muted className="h-full w-full object-cover" />
+
+          {result && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-slate-900/85 text-center">
+              {result.direction === "IN" ? (
+                <SignIn size={48} weight="bold" className="text-success" />
+              ) : (
+                <SignOut size={48} weight="bold" className="text-warning" />
+              )}
+              <p className="text-lg font-bold text-white">{result.employee_name}</p>
+              <p className="text-sm font-medium text-slate-300">
+                {labelAttendanceEvents([...todayEvents, result]).get(result.id) ?? result.direction} Recorded
+                {result.out_reason ? ` (${OUT_REASON_LABEL[result.out_reason]})` : ""} &middot;{" "}
+                {new Date(result.event_time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+      <canvas ref={canvasRef} className="hidden" />
+
+      {pending ? (
+        <OutReasonPrompt employeeName={employee.full_name} onSubmit={submitWithReason} onCancel={() => setPending(null)} />
+      ) : (
+        <>
+          {scanError && <p className="mt-3 text-center text-sm text-error">{scanError}</p>}
+
+          <div className="mt-4 flex gap-2">
+            {result ? (
+              <>
+                <button
+                  type="button"
+                  onClick={onBack}
+                  className="flex-1 rounded-lg bg-brand-blue px-4 py-2.5 text-sm font-semibold text-white hover:bg-brand-blue-dark"
+                >
+                  Mark Another Person
+                </button>
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-50"
+                >
+                  Done
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={onBack}
+                  className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-50"
+                >
+                  Back
+                </button>
+                <button
+                  type="button"
+                  disabled={!!cameraError || submitting}
+                  onClick={handleCapture}
+                  className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-brand-blue px-4 py-2.5 text-sm font-semibold text-white hover:bg-brand-blue-dark disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <Camera size={16} weight="bold" />
+                  {submitting ? "Capturing…" : "Capture"}
+                </button>
+              </>
+            )}
+          </div>
+        </>
+      )}
+    </>
   );
 }
 

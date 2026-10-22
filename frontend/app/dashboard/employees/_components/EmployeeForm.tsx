@@ -95,7 +95,7 @@ export function EmployeeForm({ employee }: { employee?: Employee }) {
             method: "POST",
             body: JSON.stringify(payload),
           });
-      router.push(isEdit ? `/dashboard/employees/${saved.id}` : `/dashboard/employees/${saved.id}/face`);
+      router.push(`/dashboard/employees/${saved.id}`);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to save employee");
       setSaving(false);

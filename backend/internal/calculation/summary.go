@@ -289,14 +289,31 @@ func (r *Repository) eventsForDate(ctx context.Context, date string) (map[int64]
 	return out, rows.Err()
 }
 
-// employeesOnApprovedLeave always returns empty — this duplicate has no
-// Leave Management module (no leave_requests table). Kept as a function so
-// every call site's shape is unchanged from the original.
+// employeesOnApprovedLeave is the batch (all-employees, one date) form of
+// hasApprovedLeave — see leave_requests.
 func (r *Repository) employeesOnApprovedLeave(ctx context.Context, date string) (map[int64]bool, error) {
-	return map[int64]bool{}, nil
+	rows, err := r.db.Query(ctx,
+		`SELECT DISTINCT employee_id FROM leave_requests WHERE status = 'APPROVED' AND $1::date BETWEEN start_date AND end_date`,
+		date,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := map[int64]bool{}
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out[id] = true
+	}
+	return out, rows.Err()
 }
 
-// employeesOnSandwichLeave always returns empty — see employeesOnApprovedLeave.
+// employeesOnSandwichLeave always returns empty — the Leave module doesn't
+// implement sandwich-leave yet. See employeesOnApprovedLeave.
 func (r *Repository) employeesOnSandwichLeave(ctx context.Context, date string) (map[int64]bool, error) {
 	return map[int64]bool{}, nil
 }

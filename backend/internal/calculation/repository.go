@@ -153,17 +153,25 @@ func (r *Repository) isHoliday(ctx context.Context, date string) (bool, error) {
 	return exists, err
 }
 
-// hasApprovedLeave always reports false — this duplicate has no Leave
-// Management module (no leave_requests table at all), so no day is ever
-// On Leave via an approved request. Kept as a function (rather than deleted
-// and inlined as a literal `false` at every call site) so buildDay's shape
-// stays identical to the original, and so re-adding Leave later is a
-// one-function change.
+// hasApprovedLeave reports whether an APPROVED leave_requests row (see the
+// Leave module, internal/leave) covers this employee-day.
 func (r *Repository) hasApprovedLeave(ctx context.Context, employeeID int64, date string) (bool, error) {
-	return false, nil
+	var exists bool
+	err := r.db.QueryRow(ctx,
+		`SELECT EXISTS(
+			SELECT 1 FROM leave_requests
+			WHERE employee_id = $1 AND status = 'APPROVED'
+			  AND $2::date BETWEEN start_date AND end_date
+		)`,
+		employeeID, date,
+	).Scan(&exists)
+	return exists, err
 }
 
-// hasSandwichLeave always reports false — see hasApprovedLeave.
+// hasSandwichLeave always reports false — the Leave module doesn't implement
+// sandwich-leave (weekend/holiday days between two leave spans also counting
+// as leave) yet; every approved leave_requests row only covers its own
+// start_date–end_date span. See hasApprovedLeave.
 func (r *Repository) hasSandwichLeave(ctx context.Context, employeeID int64, date string) (bool, error) {
 	return false, nil
 }

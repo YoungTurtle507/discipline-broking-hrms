@@ -124,6 +124,27 @@ export type ManualRequest = {
   created_at: string;
 };
 
+// A leave application — see backend/internal/leave. Applied on behalf of
+// whichever employee is picked (same shared-login + picker pattern as Mark
+// Attendance), decided by a Super Admin.
+export type LeaveType = "PAID" | "COMPOFF" | "UNPAID";
+
+export type LeaveRequest = {
+  id: number;
+  employee_id: number;
+  employee_name: string;
+  leave_type: LeaveType;
+  start_date: string;
+  end_date: string;
+  reason: string;
+  status: "PENDING" | "APPROVED" | "REJECTED";
+  requested_at: string;
+  decided_by: number | null;
+  decided_by_name: string | null;
+  decided_at: string | null;
+  has_document: boolean;
+};
+
 export type EventLabel = "Office In" | "Office Out" | "Lunch In" | "Lunch Out" | "Personal In" | "Personal Out";
 
 const BREAK_LABEL: Partial<Record<OutReason, "Lunch" | "Personal">> = {

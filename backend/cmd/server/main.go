@@ -14,6 +14,7 @@ import (
 	"hr-management/backend/internal/employee"
 	"hr-management/backend/internal/faceregistration"
 	"hr-management/backend/internal/health"
+	"hr-management/backend/internal/leave"
 	"hr-management/backend/internal/organization"
 	"hr-management/backend/pkg/database"
 	"hr-management/backend/pkg/middleware"
@@ -85,6 +86,9 @@ func main() {
 	// so its numbers can't drift from what the shared attendance screen shows.
 	dashboardRepo := dashboard.NewRepository(db, calcRepo, empRepo)
 	dashboardHandlers := dashboard.NewHandlers(dashboardRepo)
+
+	leaveRepo := leave.NewRepository(db)
+	leaveHandlers := leave.NewHandlers(leaveRepo, calcRepo, cfg.StoragePath)
 
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.New()
@@ -194,6 +198,20 @@ func main() {
 		attendanceGroup.GET("/calculated", calcHandlers.GetCalculated)
 		attendanceGroup.POST("/recalculate", calcHandlers.Recalculate)
 		attendanceGroup.POST("/absence-override", auth.RequireRole("SUPER_ADMIN"), calcHandlers.SetAbsenceOverride)
+
+		// Leave: apply uses the same shared-login + pick-your-name pattern as
+		// Mark Attendance above (leave.request_own, held by SUPER_ADMIN and
+		// the KIOSK/"Employee Panel" login — see migration 000053), approve/
+		// reject is leave.approve (SUPER_ADMIN only today). Listing is open
+		// to either so both sides can see status, not just whoever can act.
+		requireLeaveRequest := auth.RequirePermission("leave.request_own")
+		requireLeaveApprove := auth.RequirePermission("leave.approve")
+		leaveGroup := api.Group("/leave", requireAuth)
+		leaveGroup.GET("", auth.RequireAnyPermission("leave.request_own", "leave.approve", "leave.manage"), leaveHandlers.List)
+		leaveGroup.POST("", requireLeaveRequest, leaveHandlers.Apply)
+		leaveGroup.POST("/:id/approve", requireLeaveApprove, leaveHandlers.Approve)
+		leaveGroup.POST("/:id/reject", requireLeaveApprove, leaveHandlers.Reject)
+		leaveGroup.GET("/:id/document", auth.RequireAnyPermission("leave.request_own", "leave.approve", "leave.manage"), leaveHandlers.DownloadDocument)
 
 		dashboardGroup := api.Group("/dashboard", requireAuth, requireAttendance)
 		dashboardGroup.GET("/summary", dashboardHandlers.GetSummary)

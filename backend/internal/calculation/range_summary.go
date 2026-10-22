@@ -681,15 +681,42 @@ func (r *Repository) holidaysInRange(ctx context.Context, from, to string) (map[
 	return out, rows.Err()
 }
 
-// employeesOnApprovedLeaveRange always returns empty — this duplicate has no
-// Leave Management module (no leave_requests table). Kept as a function so
-// every call site's shape (including the per-employee leave_type value other
-// callers used to switch on) is unchanged from the original.
+// employeesOnApprovedLeaveRange is the batch (all-employees, date-range) form
+// of hasApprovedLeave — one row per employee-day an APPROVED leave_requests
+// row covers, keyed by that day's own leave_type (see the PAID/UNPAID/COMPOFF
+// switch this feeds in summarizeRange). generate_series expands each request
+// into its covered days, bounded to the intersection with [from,to] so a
+// request far outside the query window never generates irrelevant rows.
 func (r *Repository) employeesOnApprovedLeaveRange(ctx context.Context, from, to string) (map[int64]map[string]string, error) {
-	return map[int64]map[string]string{}, nil
+	rows, err := r.db.Query(ctx,
+		`SELECT employee_id, leave_type, d::date::text
+		 FROM leave_requests,
+		      generate_series(GREATEST(start_date, $1::date), LEAST(end_date, $2::date), '1 day'::interval) AS d
+		 WHERE status = 'APPROVED' AND start_date <= $2::date AND end_date >= $1::date`,
+		from, to,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := map[int64]map[string]string{}
+	for rows.Next() {
+		var id int64
+		var leaveType, day string
+		if err := rows.Scan(&id, &leaveType, &day); err != nil {
+			return nil, err
+		}
+		if out[id] == nil {
+			out[id] = map[string]string{}
+		}
+		out[id][day] = leaveType
+	}
+	return out, rows.Err()
 }
 
-// employeesOnSandwichLeaveRange always returns empty — see employeesOnApprovedLeaveRange.
+// employeesOnSandwichLeaveRange always returns empty — the Leave module
+// doesn't implement sandwich-leave yet. See employeesOnApprovedLeaveRange.
 func (r *Repository) employeesOnSandwichLeaveRange(ctx context.Context, from, to string) (map[int64]map[string]bool, error) {
 	return map[int64]map[string]bool{}, nil
 }

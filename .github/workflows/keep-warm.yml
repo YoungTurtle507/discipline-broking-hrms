@@ -1,13 +1,19 @@
-name: Keep face service warm
+name: Keep services warm
 
-# Pings the deployed face-recognition service every 10 minutes — comfortably
-# under the ~15-minute idle timeout most free hosting tiers use — so it
-# never actually goes to sleep, instead of letting it sleep and paying the
-# cold-start cost (reloading ML models) on the next real scan.
+# Pings the deployed face-recognition service and the backend every 10
+# minutes during office hours so neither goes to sleep (Render's free tier
+# sleeps a service after ~15 idle minutes, and waking the face service takes
+# 20-60s — which is what makes the first scan of the day slow).
+#
+# Office hours are 9:00-19:00 IST, Monday to Saturday. GitHub cron runs in
+# UTC and IST is UTC+5:30, so "3-13 UTC" is 08:30-19:20 IST (starting half an
+# hour early so both are already warm at 9:00). Pinging only in office hours,
+# not around the clock, keeps two always-on services inside Render's ~750
+# free instance hours a month (~570 used this way).
 #
 # Needs FACE_SERVICE_URL set as a repo secret (Settings → Secrets and
-# variables → Actions) once the service is actually deployed somewhere —
-# this workflow does nothing useful until that points at a real URL.
+# variables → Actions): https://discipline-broking-face-service.onrender.com
+# — without it the face service ping is skipped.
 #
 # Two honest caveats, not hidden: GitHub may delay a scheduled run by a few
 # minutes during high load elsewhere on their infrastructure, and GitHub
@@ -17,7 +23,7 @@ name: Keep face service warm
 
 on:
   schedule:
-    - cron: "*/10 * * * *"
+    - cron: "*/10 3-13 * * 1-6"
   workflow_dispatch: {} # lets you trigger a ping manually from the Actions tab, for testing
 
 jobs:
@@ -27,7 +33,10 @@ jobs:
       - name: Ping face service health endpoint
         run: |
           if [ -z "${{ secrets.FACE_SERVICE_URL }}" ]; then
-            echo "FACE_SERVICE_URL secret isn't set yet — nothing to ping. Set it once the service is deployed."
+            echo "FACE_SERVICE_URL secret isn't set yet — nothing to ping."
             exit 0
           fi
-          curl -sf "${{ secrets.FACE_SERVICE_URL }}/health" && echo "ok" || echo "ping failed (service may be starting up, or genuinely down)"
+          curl -sf -m 90 "${{ secrets.FACE_SERVICE_URL }}/health" && echo "face ok" || echo "face ping failed (service may be starting up, or genuinely down)"
+      - name: Ping backend health endpoint
+        run: |
+          curl -sf -m 90 "https://discipline-broking-backend.onrender.com/health" && echo "backend ok" || echo "backend ping failed (service may be starting up, or genuinely down)"

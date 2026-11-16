@@ -389,6 +389,19 @@ function CaptureScreen({
   const [scanError, setScanError] = useState<string | null>(null);
   const [result, setResult] = useState<AttendanceEvent | null>(null);
   const [pending, setPending] = useState<PendingReason | null>(null);
+  // The face service sleeps when idle on free hosting; ask the backend to wake
+  // it as soon as this screen opens so it's ready by the time Capture is hit.
+  const [faceWarm, setFaceWarm] = useState<"warming" | "ready" | "failed">("warming");
+
+  useEffect(() => {
+    let cancelled = false;
+    apiFetch("/api/v1/attendance/face-warmup")
+      .then(() => !cancelled && setFaceWarm("ready"))
+      .catch(() => !cancelled && setFaceWarm("failed"));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   async function submit(blob: Blob, reason?: OutReason, note?: string, documentFile?: File) {
     setSubmitting(true);
@@ -470,6 +483,9 @@ function CaptureScreen({
         <OutReasonPrompt employeeName={employee.full_name} onSubmit={submitWithReason} onCancel={() => setPending(null)} />
       ) : (
         <>
+          {faceWarm === "warming" && !result && (
+            <p className="mt-3 text-center text-sm text-slate-500">Waking up face service… you can capture now, it may take a little longer.</p>
+          )}
           {scanError && <p className="mt-3 text-center text-sm text-error">{scanError}</p>}
 
           <div className="mt-4 flex gap-2">
@@ -506,7 +522,7 @@ function CaptureScreen({
                   className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-brand-blue px-4 py-2.5 text-sm font-semibold text-white hover:bg-brand-blue-dark disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <Camera size={16} weight="bold" />
-                  {submitting ? "Capturing…" : "Capture"}
+                  {submitting ? (faceWarm === "ready" ? "Capturing…" : "Capturing… (face service waking, up to a minute)") : "Capture"}
                 </button>
               </>
             )}

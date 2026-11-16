@@ -156,6 +156,20 @@ func (h *Handlers) checkLiveCapture(c *gin.Context, imageBytes []byte, filename 
 	return result, true
 }
 
+// FaceWarmup wakes the face service ahead of a scan. The kiosk calls it when
+// the camera screen opens so a service asleep on a free hosting tier is
+// already up by the time Capture is pressed. Blocks until it's ready (or
+// gives up after 100s); the response only reports readiness.
+func (h *Handlers) FaceWarmup(c *gin.Context) {
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 100*time.Second)
+	defer cancel()
+	if err := h.client.Warm(ctx); err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "face service unavailable"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+}
+
 // Mark is attendance marking's one entry point: the employee is picked
 // explicitly (by whoever's operating the kiosk) before the camera opens, so
 // this never has to figure out who's in frame — only whether the photo shows

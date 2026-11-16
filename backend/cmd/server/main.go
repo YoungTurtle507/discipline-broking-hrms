@@ -177,6 +177,7 @@ func main() {
 		// The kiosk's "Mark Attendance" action: employee picked first, then
 		// a live-capture photo confirms a real person, not an auto-match.
 		attendanceGroup.POST("", attendanceHandlers.Mark)
+		attendanceGroup.GET("/face-warmup", attendanceHandlers.FaceWarmup)
 		attendanceGroup.GET("/today", attendanceHandlers.ListToday)
 		attendanceGroup.GET("/events/:id/photo", attendanceHandlers.GetPhoto)
 		attendanceGroup.POST("/manual", attendanceHandlers.RecordManual)

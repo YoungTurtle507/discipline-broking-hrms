@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os"
 
+	"hr-management/backend/internal/alert"
 	"hr-management/backend/internal/attendance"
 	"hr-management/backend/internal/auth"
 	"hr-management/backend/internal/calculation"
@@ -28,6 +29,7 @@ func main() {
 	slog.SetDefault(logger)
 
 	cfg := config.Load()
+	alert.Start(cfg.NtfyTopic)
 
 	ctx := context.Background()
 

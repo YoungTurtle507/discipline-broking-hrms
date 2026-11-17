@@ -13,6 +13,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"hr-management/backend/internal/alert"
 	"hr-management/backend/internal/auth"
 	"hr-management/backend/internal/calculation"
 	"hr-management/backend/internal/clock"
@@ -249,6 +250,7 @@ func (h *Handlers) Mark(c *gin.Context) {
 	}
 	today := eventTime.Format("2006-01-02")
 	h.recalculateDay(ctx, employeeID, today)
+	alert.Punch(event.Direction, event.EmployeeName, event.EventTime)
 	c.JSON(http.StatusCreated, event)
 }
 
@@ -436,6 +438,7 @@ func (h *Handlers) RecordManual(c *gin.Context) {
 	}
 	manualDate := eventTime.Format("2006-01-02")
 	h.recalculateDay(c.Request.Context(), req.EmployeeID, manualDate)
+	alert.Punch(event.Direction, event.EmployeeName, event.EventTime)
 
 	slog.Info("manual attendance entry recorded",
 		"employee_id", req.EmployeeID,

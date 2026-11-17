@@ -24,6 +24,9 @@ type Config struct {
 	// separate keyspaces instead of needing a second port.
 	RedisDB        int
 	FaceServiceURL string
+	// NtfyTopic is the ntfy.sh topic OFFICE IN / OUT alerts are pushed to;
+	// empty turns the alerts off.
+	NtfyTopic string
 	// StoragePath is where uploaded files (e.g. leave documents) are written,
 	// as a path on the backend's own filesystem — resolved relative to the
 	// backend process's working directory unless given as absolute.
@@ -52,6 +55,7 @@ func Load() *Config {
 		RedisDB:        getEnvInt("REDIS_DB", 0),
 		FaceServiceURL: getEnv("FACE_SERVICE_URL", "http://localhost:8001"),
 		StoragePath:    getEnv("STORAGE_PATH", "./storage"),
+		NtfyTopic:      getEnv("NTFY_TOPIC", ""),
 
 		SessionTTLHours:    getEnvInt("SESSION_TTL_HOURS", 24),
 		CookieSecure:       getEnvBool("COOKIE_SECURE", false),

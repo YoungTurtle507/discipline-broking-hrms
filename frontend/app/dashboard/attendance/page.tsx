@@ -416,8 +416,14 @@ function CaptureScreen({
     };
   }, []);
 
+  // A scan taking more than a few seconds means the face service is waking up
+  // even when the 10-minute memory above said it was warm (e.g. after a
+  // restart), so the waiting message shows then regardless.
+  const [slowScan, setSlowScan] = useState(false);
+
   async function submit(blob: Blob, reason?: OutReason, note?: string, documentFile?: File) {
     setSubmitting(true);
+    const slowTimer = setTimeout(() => setSlowScan(true), 5000);
     try {
       const formData = new FormData();
       formData.append("employee_id", String(employee.id));
@@ -441,6 +447,8 @@ function CaptureScreen({
       setPending(null);
       setScanError(err instanceof ApiError ? err.message : "Failed to record attendance");
     } finally {
+      clearTimeout(slowTimer);
+      setSlowScan(false);
       setSubmitting(false);
     }
   }
@@ -497,7 +505,7 @@ function CaptureScreen({
         <OutReasonPrompt employeeName={employee.full_name} onSubmit={submitWithReason} onCancel={() => setPending(null)} />
       ) : (
         <>
-          {faceWarm === "warming" && !result && (
+          {(faceWarm === "warming" || slowScan) && !result && (
             <p className="mt-3 text-center text-sm text-slate-500">Waking up face service… you can capture now, it may take a little longer.</p>
           )}
           {scanError && <p className="mt-3 text-center text-sm text-error">{scanError}</p>}
@@ -536,7 +544,7 @@ function CaptureScreen({
                   className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-brand-blue px-4 py-2.5 text-sm font-semibold text-white hover:bg-brand-blue-dark disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <Camera size={16} weight="bold" />
-                  {submitting ? (faceWarm === "ready" ? "Capturing…" : "Capturing… (face service waking, up to a minute)") : "Capture"}
+                  {submitting ? (faceWarm === "ready" && !slowScan ? "Capturing…" : "Capturing… (face service waking, up to a minute)") : "Capture"}
                 </button>
               </>
             )}

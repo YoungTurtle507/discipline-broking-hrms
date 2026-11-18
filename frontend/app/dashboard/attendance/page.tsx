@@ -369,6 +369,13 @@ function MarkAttendanceModal({
 // The camera step for one already-chosen employee: live preview, a manual
 // Capture button (no auto-polling — a capture only happens when clicked),
 // then either a result or (marking OUT before shift end) the reason prompt.
+// When the face service last proved itself awake (a warm-up or a successful
+// scan). Render's free tier sleeps it after ~15 idle minutes, so for 10 minutes
+// after this the capture screen skips the wake-up and its message.
+const FACE_WARM_WINDOW_MS = 10 * 60 * 1000;
+let faceWarmAt = 0;
+const faceRecentlyWarm = () => Date.now() - faceWarmAt < FACE_WARM_WINDOW_MS;
+
 function CaptureScreen({
   employee,
   todayEvents,
@@ -391,12 +398,18 @@ function CaptureScreen({
   const [pending, setPending] = useState<PendingReason | null>(null);
   // The face service sleeps when idle on free hosting; ask the backend to wake
   // it as soon as this screen opens so it's ready by the time Capture is hit.
-  const [faceWarm, setFaceWarm] = useState<"warming" | "ready" | "failed">("warming");
+  const [faceWarm, setFaceWarm] = useState<"warming" | "ready" | "failed">(
+    () => (faceRecentlyWarm() ? "ready" : "warming"),
+  );
 
   useEffect(() => {
+    if (faceRecentlyWarm()) return;
     let cancelled = false;
     apiFetch("/api/v1/attendance/face-warmup")
-      .then(() => !cancelled && setFaceWarm("ready"))
+      .then(() => {
+        faceWarmAt = Date.now();
+        if (!cancelled) setFaceWarm("ready");
+      })
       .catch(() => !cancelled && setFaceWarm("failed"));
     return () => {
       cancelled = true;
@@ -415,6 +428,7 @@ function CaptureScreen({
       const event = await apiUpload<AttendanceEvent>("/api/v1/attendance", formData);
       setPending(null);
       setScanError(null);
+      faceWarmAt = Date.now();
       setResult(event);
       onRecorded();
     } catch (err) {

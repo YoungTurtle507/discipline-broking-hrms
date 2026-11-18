@@ -149,12 +149,17 @@ func (r *Repository) RecordManual(ctx context.Context, employeeID int64, directi
 // NeighboringEvents returns the employee's event immediately before and
 // immediately after t (nil for either if there isn't one) — everything a
 // manual entry needs to check that inserting a new event at t still leaves
-// IN/OUT strictly alternating, wherever in the employee's history t falls.
+// IN/OUT strictly alternating. Only t's own calendar day counts: every day
+// starts fresh, as it does for camera scans (see NextDirection), so an
+// earlier day's unclosed IN never blocks a new day's IN.
 func (r *Repository) NeighboringEvents(ctx context.Context, employeeID int64, t time.Time) (prev, next *Event, err error) {
+	t = t.In(time.Local) // the day boundary is the server's (IST) calendar day
+	dayStart := time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.Local)
+	dayEnd := dayStart.AddDate(0, 0, 1)
 	row := r.db.QueryRow(ctx,
 		`SELECT id, employee_id, direction, event_time, confidence, model_name, model_version, verified_by, source, note, out_reason
-		 FROM attendance_events WHERE employee_id = $1 AND event_time < $2 ORDER BY event_time DESC LIMIT 1`,
-		employeeID, t,
+		 FROM attendance_events WHERE employee_id = $1 AND event_time >= $3 AND event_time < $2 ORDER BY event_time DESC LIMIT 1`,
+		employeeID, t, dayStart,
 	)
 	var p Event
 	if scanErr := row.Scan(&p.ID, &p.EmployeeID, &p.Direction, &p.EventTime, &p.Confidence, &p.ModelName, &p.ModelVersion,
@@ -166,8 +171,8 @@ func (r *Repository) NeighboringEvents(ctx context.Context, employeeID int64, t 
 
 	row = r.db.QueryRow(ctx,
 		`SELECT id, employee_id, direction, event_time, confidence, model_name, model_version, verified_by, source, note, out_reason
-		 FROM attendance_events WHERE employee_id = $1 AND event_time > $2 ORDER BY event_time ASC LIMIT 1`,
-		employeeID, t,
+		 FROM attendance_events WHERE employee_id = $1 AND event_time > $2 AND event_time < $3 ORDER BY event_time ASC LIMIT 1`,
+		employeeID, t, dayEnd,
 	)
 	var n Event
 	if scanErr := row.Scan(&n.ID, &n.EmployeeID, &n.Direction, &n.EventTime, &n.Confidence, &n.ModelName, &n.ModelVersion,
